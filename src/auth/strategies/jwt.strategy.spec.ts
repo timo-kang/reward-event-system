@@ -12,15 +12,13 @@ describe('JwtStrategy', () => {
       findById: jest.fn(),
     };
 
-    const module: TestingModule = Test.createTestingModule({
+    const module: TestingModule = await Test.createTestingModule({
       providers: [
         JwtStrategy,
         {
           provide: getModelToken('User'), // Provide mock for the User model
           useValue: userModelMock,
             // Mock the method used by JwtStrategy's validate method
-            // For example, if validate calls authService.validateUser(payload):
-          },
         },
       ],
     }).compile();

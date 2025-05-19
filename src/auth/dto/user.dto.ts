@@ -5,3 +5,5 @@ export class UserDto {
   username: string;
   roles: UserRole[];
 }
+
+export {}

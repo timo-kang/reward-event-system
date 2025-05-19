@@ -5,7 +5,6 @@ import { Model } from 'mongoose';
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { RewardService } from './reward.service';
 import { AuthService } from '../auth/auth.service'; // Assuming AuthService is used as the user service
-import { Reward } from './schemas/reward.schema';
 
 describe('RewardRequestService', () => {
   let service: RewardRequestService;
@@ -74,17 +73,17 @@ describe('RewardRequestService', () => {
     const rewardId = 'reward789';
 
     const createRewardRequestDto = {
- userId: userId,
- eventId: eventId,
- rewardId: rewardId,
+     userId: userId,
+     eventId: eventId,
+     rewardId: rewardId,
     };
 
-    const mockReward = { _id: createRewardRequestDto.rewardId, name: 'Test Reward' } as Reward;
+    const mockReward: unknown = { _id: createRewardRequestDto.rewardId, name: 'Test Reward' };
     
     it('should create a new reward request if no duplicate exists and conditions are met', async () => {
       jest.spyOn(rewardRequestModel, 'findOne').mockResolvedValue(null); // No duplicate request
       jest.spyOn(eventModel, 'findById').mockResolvedValue({}); // Mock a found event
-      jest.spyOn(service['rewardService'], 'findById').mockResolvedValue(mockReward); // Mock a found reward
+      jest.spyOn(service['rewardService'], 'findById').mockResolvedValue(mockReward as Reward); // Mock a found reward
       jest.spyOn(service as any, 'validateConditions').mockResolvedValue(true); // Conditions met
 
       // Mock user service calls (even if validateConditions is mocked, they are called within create)
@@ -92,11 +91,15 @@ describe('RewardRequestService', () => {
       jest.spyOn(service['authService'], 'getUserLoginHistory').mockResolvedValue([new Date()]);
       jest.spyOn(service['authService'], 'getUserInvitedFriendsCount').mockResolvedValue(5);
 
-
-      const saveSpy = jest.fn().mockResolvedValue({ user: createRewardRequestDto.userId, event: createRewardRequestDto.eventId, reward: createRewardRequestDto.rewardId, status: 'pending' }); // Mock save method
-      jest.spyOn(rewardRequestModel, 'new').mockImplementation(() => ({
-        save: saveSpy,
-      }));
+      const mockRewardRequestDocument = {
+        user: userId,
+        event: eventId,
+        reward: rewardId,
+        request_date: expect.any(Date),
+        status: 'pending',
+        save: jest.fn().mockResolvedValue({ _id: 'someRequestId', user: userId, event: eventId, reward: rewardId, request_date: expect.any(Date), status: 'pending' }), // Mock save method
+      };
+      jest.spyOn(rewardRequestModel, 'new').mockImplementation(() => mockRewardRequestDocument as any);
       
       const result = await service.create(createRewardRequestDto as any); // Cast to any to match the method signature in the code
 
@@ -104,7 +107,7 @@ describe('RewardRequestService', () => {
       expect(service['rewardService'].findById).toHaveBeenCalledWith(createRewardRequestDto.rewardId);
       expect(service['validateConditions']).toHaveBeenCalledWith(eventId, userId);
       expect(rewardRequestModel.new).toHaveBeenCalledWith({ user: userId, event: eventId, reward: rewardId, request_date: expect.any(Date), status: 'pending' });
-      expect(saveSpy).toHaveBeenCalled();
+      expect(mockRewardRequestDocument.save).toHaveBeenCalled();
       expect(result).toEqual({ user: userId, event: eventId, reward: rewardId, status: 'pending' });
 
       // Ensure user service methods were called
@@ -238,7 +241,7 @@ describe('RewardRequestService', () => {
       expect(rewardRequestModel.find).toHaveBeenCalledWith({ status: status }); // Ensure correct query
       expect(findSpy.exec).toHaveBeenCalled();
       expect(result).toEqual(mockRequests);
-    });  });
+    });
   });
 
   describe('updateRewardRequestStatus', () => {
