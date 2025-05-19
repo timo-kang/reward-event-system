@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: always
+    networks:
+      - app-network
+
+  gateway-server:
+    build:
+      context: ./src/gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000" # Or your desired gateway port
+    depends_on:
+      - auth-server
+      - event-server
+    networks:
+      - app-network
+    restart: always
+    environment:
+      - AUTH_SERVICE_URL=http://auth-server:3001
+      - EVENT_SERVICE_URL=http://event-server:3002
+
+  auth-server:
+    build:
+      context: ./src/auth
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001" # Or your desired auth port
+    depends_on:
+      - mongodb
+    networks:
+      - app-network
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/your_database_name # Replace with your desired database name
+      - JWT_SECRET=YOUR_JWT_SECRET # Replace with a strong secret
+    restart: always
+
+  event-server:
+    build:
+      context: ./src/event
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002" # Or your desired event port
+    depends_on:
+      - mongodb
+    networks:
+      - app-network
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/your_database_name # Replace with your desired database name
+    restart: always
+
+volumes:
+  mongodb_data:
+
+networks:
+  app-network:
