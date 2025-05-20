@@ -3,11 +3,11 @@ import { AuthService } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { JwtAuthGuard, Public, Roles, RolesGuard } from '../shared/auth';
-import { UserRole, JwtPayload } from '../shared/auth';
+import { UserRole, JwtPayload, AuthResponse } from '../shared/auth';
 import { AUTH_ERRORS } from '../shared/auth';
-import { UserDocument } from './schemas/user.schema';
+import { Request as ExpressRequest } from 'express';
 
-interface RequestWithUser extends Request {
+interface RequestWithUser extends ExpressRequest {
   user: JwtPayload;
 }
 
@@ -18,12 +18,15 @@ export class AuthController {
   @Post('register')
   @Public()
   @HttpCode(HttpStatus.CREATED)
-  async register(@Body() createUserDto: CreateUserDto) {
+  async register(@Body() createUserDto: CreateUserDto): Promise<{ user: { id: string; username: string; role: UserRole } }> {
     try {
       const result = await this.authService.register(createUserDto);
       return {
-        message: 'User registered successfully',
-        user: result,
+        user: {
+          id: result.user.id,
+          username: result.user.username,
+          role: result.user.role,
+        },
       };
     } catch (error: any) {
       if (error.code === 11000) {
@@ -45,11 +48,12 @@ export class AuthController {
     }
   }
 
-  @Get('validate')
+  @Get('profile')
   @UseGuards(JwtAuthGuard)
-  async validateToken(@Request() req: RequestWithUser) {
+  async getProfile(@Request() req: RequestWithUser): Promise<{ role: UserRole }> {
+    const user = await this.authService.validateUser(req.user);
     return {
-      user: req.user,
+      role: user.role,
     };
   }
 

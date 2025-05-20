@@ -6,17 +6,26 @@ import { CreateUserDto } from '../../src/auth/dto/create-user.dto';
 import { CreateEventDto } from '../../src/event/dto/create-event.dto';
 import { CreateRewardDto } from '../../src/event/dto/create-reward.dto';
 import { CreateRewardRequestDto } from '../../src/event/dto/create-reward-request.dto';
+import { UserRole } from '../../src/shared/auth';
+import { getModelToken } from '@nestjs/mongoose';
+import { User } from '../../src/auth/schemas/user.schema';
+import { AuthService } from '../../src/auth/auth.service';
 
 describe('System Integration Tests', () => {
   let app: INestApplication;
   let authToken: string;
+  let adminToken: string;
   let userId: string;
   let eventId: string;
   let rewardId: string;
+  let userModel: any;
+  let authService: AuthService;
 
   beforeAll(async () => {
-    const { gatewayApp } = await setupTestEnvironment();
+    const { gatewayApp, authModule } = await setupTestEnvironment();
     app = gatewayApp;
+    userModel = authModule.get(getModelToken(User.name));
+    authService = authModule.get(AuthService);
   });
 
   afterAll(async () => {
@@ -35,9 +44,42 @@ describe('System Integration Tests', () => {
         .send(createUserDto)
         .expect(201);
 
-      expect(response.body).toHaveProperty('message');
+      expect(response.body).toHaveProperty('user');
+      expect(response.body.user).toHaveProperty('id');
+      userId = response.body.user.id;
+    });
 
-      userId = response.body.user.user.id;
+    it('should register an admin user', async () => {
+      // Create admin user using auth service
+      const adminUser = await authService.register({
+        username: 'adminUser',
+        password: 'adminpass123',
+      });
+
+      // Update role to admin
+      await userModel.findByIdAndUpdate(adminUser.user.id, { role: UserRole.ADMIN });
+
+      // Login to get admin token
+      const loginResponse = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          username: 'adminUser',
+          password: 'adminpass123',
+        })
+        .expect(200);
+
+      expect(loginResponse.body).toHaveProperty('access_token');
+      adminToken = loginResponse.body.access_token;
+      console.log('Admin token:', adminToken);
+
+      // Verify admin role in token
+      const verifyResponse = await request(app.getHttpServer())
+        .get('/auth/profile')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      console.log('Profile response:', verifyResponse.body);
+      expect(verifyResponse.body.role).toBe(UserRole.ADMIN);
     });
 
     it('should login user and get JWT token', async () => {
@@ -50,12 +92,13 @@ describe('System Integration Tests', () => {
         .expect(200);
 
       expect(response.body).toHaveProperty('access_token');
-      authToken = response.body.user.access_token;
+      authToken = response.body.access_token;
     });
   });
 
   describe('Event Management Flow', () => {
-    it('should create a new event', async () => {
+    it('should create a new event (admin only)', async () => {
+      console.log('Using admin token for event creation:', adminToken);
       const createEventDto: CreateEventDto = {
         name: 'Test Event',
         description: 'Test Event Description',
@@ -66,64 +109,104 @@ describe('System Integration Tests', () => {
           max_age: 65,
           required_points: 100,
         },
+        is_active: true, // Set event as active
       };
 
       const response = await request(app.getHttpServer())
         .post('/events')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send(createEventDto)
         .expect(201);
 
       expect(response.body).toHaveProperty('_id');
       eventId = response.body._id;
+      console.log('Created event ID:', eventId);
+
+      // Verify event was created and is active
+      const eventResponse = await request(app.getHttpServer())
+        .get(`/events/${eventId}`)
+        .expect(200);
+
+      console.log('Event details:', eventResponse.body);
+      expect(eventResponse.body.is_active).toBe(true);
     });
 
-    it('should create a reward for the event', async () => {
+    it('should get all events (public)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/events')
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body.length).toBeGreaterThan(0);
+    });
+
+    it('should create a reward for the event (admin only)', async () => {
       const createRewardDto: CreateRewardDto = {
-        event: eventId,
         name: 'Test Reward',
         description: 'Test Reward Description',
-        type: "test",
-        value: 100
+        type: 'test',
+        value: 100,
+        event: eventId,
       };
 
       const response = await request(app.getHttpServer())
-        .post('/rewards')
-        .set('Authorization', `Bearer ${authToken}`)
+        .post(`/events/${eventId}/rewards`)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send(createRewardDto)
         .expect(201);
 
       expect(response.body).toHaveProperty('_id');
       rewardId = response.body._id;
     });
+
+    it('should get rewards by event (public)', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/events/${eventId}/rewards`)
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body.length).toBeGreaterThan(0);
+    });
   });
 
   describe('Reward Request Flow', () => {
-    it('should create a reward request', async () => {
+    it('should create a reward request (authenticated user)', async () => {
       const createRewardRequestDto: CreateRewardRequestDto = {
         rewardId: rewardId,
         userId: userId,
-        eventId: eventId
+        eventId: eventId,
       };
 
       const response = await request(app.getHttpServer())
-        .post('/reward-requests')
+        .post(`/events/${eventId}/reward-requests`)
         .set('Authorization', `Bearer ${authToken}`)
         .send(createRewardRequestDto)
         .expect(201);
 
       expect(response.body).toHaveProperty('_id');
-      expect(response.body.status).toBe('pending');
+      expect(response.body.status).toBe('PENDING');
     });
 
-    it('should get user reward requests', async () => {
+    it('should get reward requests by event (admin only)', async () => {
       const response = await request(app.getHttpServer())
-        .get(`/reward-requests/user/${userId}`)
-        .set('Authorization', `Bearer ${authToken}`)
+        .get(`/events/${eventId}/requests`)
+        .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
       expect(Array.isArray(response.body)).toBe(true);
       expect(response.body.length).toBeGreaterThan(0);
+
+      const requestId = response.body[0]._id;
+
+      it('should update reward request status (admin only)', async () => {
+        const updateResponse = await request(app.getHttpServer())
+          .put(`/events/${eventId}/requests/${requestId}/status`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ status: 'APPROVED' })
+          .expect(200);
+
+        expect(updateResponse.body.status).toBe('APPROVED');
+      });
     });
   });
 }); 

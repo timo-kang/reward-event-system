@@ -17,6 +17,8 @@ let mongod: MongoMemoryServer;
 let gatewayApp: INestApplication;
 let authApp: INestApplication;
 let eventApp: INestApplication;
+let authModule: TestingModule;
+let eventModule: TestingModule;
 
 export async function setupTestEnvironment() {
   mongod = await MongoMemoryServer.create();
@@ -24,28 +26,24 @@ export async function setupTestEnvironment() {
 
   const mongooseModule = MongooseModule.forRoot(mongoUri);
 
+  const jwtConfig = {
+    JWT_SECRET: 'jwt-secret-test',
+    JWT_EXPIRATION: '1h',
+  };
+
   const configModule = ConfigModule.forRoot({
     isGlobal: true,
     load: [
       () => ({
         MONGO_URI: mongoUri,
-        JWT_SECRET: 'test-secret',
+        ...jwtConfig,
         AUTH_SERVICE_URL: 'http://localhost:3001',
         EVENT_SERVICE_URL: 'http://localhost:3002',
       }),
     ],
   });
 
-  const gatewayModule = await Test.createTestingModule({
-    imports: [
-      configModule,
-      GatewayModule,
-    ],
-  }).compile();
-  gatewayApp = gatewayModule.createNestApplication();
-  await gatewayApp.listen(3000);
-
-  const authModule = await Test.createTestingModule({
+  authModule = await Test.createTestingModule({
     imports: [
       configModule,
       mongooseModule,
@@ -58,7 +56,7 @@ export async function setupTestEnvironment() {
   authApp = authModule.createNestApplication();
   await authApp.listen(3001);
 
-  const eventModule = await Test.createTestingModule({
+  eventModule = await Test.createTestingModule({
     imports: [
       configModule,
       mongooseModule,
@@ -74,11 +72,22 @@ export async function setupTestEnvironment() {
   eventApp = eventModule.createNestApplication();
   await eventApp.listen(3002);
 
+  const gatewayModule = await Test.createTestingModule({
+    imports: [
+      configModule,
+      GatewayModule,
+    ],
+  }).compile();
+  gatewayApp = gatewayModule.createNestApplication();
+  await gatewayApp.listen(3000);
+
   return {
     gatewayApp,
     authApp,
     eventApp,
     mongod,
+    authModule,
+    eventModule,
   };
 }
 

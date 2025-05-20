@@ -44,15 +44,12 @@ describe('AuthController', () => {
 
     it('should return the result from authService.register', async () => {
       const expectedResult = {
-        message: 'User registered successfully',
         user: {
-          user: {
-            id: TEST_USER_ID,
-            username: TEST_USERNAME,
-            role: UserRole.USER,
-          },
-          access_token: 'test-token',
+          id: TEST_USER_ID,
+          username: TEST_USERNAME,
+          role: UserRole.USER,
         },
+        access_token: "test-token",
       };
 
       mockAuthService.register.mockResolvedValue(expectedResult.user);
@@ -71,15 +68,12 @@ describe('AuthController', () => {
 
     it('should return the result from authService.login', async () => {
       const expectedResult = {
-        message: 'Login successful',
         user: {
-          user: {
-            id: TEST_USER_ID,
-            username: TEST_USERNAME,
-            role: UserRole.USER,
-          },
-          access_token: 'test-token',
+          id: TEST_USER_ID,
+          username: TEST_USERNAME,
+          role: UserRole.USER,
         },
+        access_token: "test-token",
       };
 
       mockAuthService.login.mockResolvedValue(expectedResult);
