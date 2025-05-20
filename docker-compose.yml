@@ -13,8 +13,8 @@ services:
 
   gateway-server:
     build:
-      context: ./src/gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/gateway/Dockerfile
     ports:
       - "3000:3000"
     depends_on:
@@ -29,8 +29,8 @@ services:
 
   auth-server:
     build:
-      context: ./src/auth
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/auth/Dockerfile
     ports:
       - "3001:3001"
     depends_on:
@@ -44,8 +44,8 @@ services:
 
   event-server:
     build:
-      context: ./src/event
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/event/Dockerfile
     ports:
       - "3002:3002"
     depends_on:
