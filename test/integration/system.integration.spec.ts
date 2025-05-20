@@ -150,7 +150,7 @@ describe('System Integration Tests', () => {
       const createRewardDto: CreateRewardDto = {
         name: 'Test Reward',
         description: 'Test Reward Description',
-        type: 'test',
+        type: 'POINTS',
         value: 100,
         event: eventId,
       };
@@ -216,7 +216,7 @@ describe('System Integration Tests', () => {
       const createRewardDto: CreateRewardDto = {
         name: 'Test Reward for Request',
         description: 'Test Reward Description for Request',
-        type: 'test',
+        type: 'POINTS',
         value: 100,
         event: eventId,
       };
@@ -280,4 +280,4 @@ describe('System Integration Tests', () => {
       });
     });
   });
-}); 
+});

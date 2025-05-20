@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, Put, HttpException, HttpStatus, UseGuards, Delete, Headers } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Put, HttpException, HttpStatus, UseGuards, Delete, Headers, Request } from '@nestjs/common';
 import { EventService } from './event.service';
 import { RewardService } from './reward.service';
 import { RewardRequestService } from './reward-request.service';
@@ -110,7 +110,12 @@ export class EventController {
     async createReward(
         @Param('id') eventId: string,
         @Body() createRewardDto: CreateRewardDto,
+        @Request() req,
     ) {
+        console.log('Event service - Creating reward');
+        console.log('Auth header:', req.headers.authorization);
+        console.log('User from request:', req.user);
+        
         try {
             const event = await this.eventService.findById(eventId);
             if (!event) {
@@ -121,11 +126,19 @@ export class EventController {
             }
             return await this.rewardService.create(eventId, createRewardDto);
         } catch (error) {
+            console.log('Event service - Error creating reward:', error);
             if (error instanceof HttpException) {
                 throw error;
             }
+            // Handle Mongoose validation errors
+            if (error.name === 'ValidationError') {
+                throw new HttpException(
+                    { message: error.message },
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
             throw new HttpException(
-                { message: AUTH_ERRORS.UNAUTHORIZED },
+                { message: error.message || 'Failed to create reward' },
                 HttpStatus.INTERNAL_SERVER_ERROR,
             );
         }

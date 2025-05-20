@@ -100,6 +100,9 @@ export class EventController {
     @Request() req,
   ): Observable<any> {
     const eventServiceUrl = this.configService.get<string>('EVENT_SERVICE_URL');
+    console.log('Creating reward with auth header:', req.headers.authorization);
+    console.log('User from request:', req.user);
+    
     return this.httpService
       .post(`${eventServiceUrl}/events/${eventId}/rewards`, createRewardDto, {
         headers: {
@@ -109,12 +112,16 @@ export class EventController {
       .pipe(
         map(response => response.data),
         catchError((error: AxiosError) => {
+          console.log('Error response:', error.response?.data);
+          console.log('Error status:', error.response?.status);
+          console.log('Error headers:', error.response?.headers);
+          
           if (error.response?.data) {
             const errorData = error.response.data as { message?: string } | string;
             const errorMessage = typeof errorData === 'string' ? errorData : errorData.message || 'Unknown error';
             throw new HttpException(
               { message: errorMessage },
-              error.response.status,
+              error.response.status || HttpStatus.INTERNAL_SERVER_ERROR,
             );
           }
           throw new HttpException(
