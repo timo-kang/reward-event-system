@@ -19,6 +19,12 @@ The system is built on a Microservice Architecture (MSA) with three servers:
 2. **Auth Server**: User information management, login, role management, JWT issuance
 3. **Event Server**: Event creation, reward definition, reward request processing, distribution status storage
 
+## Run System
+
+```
+docker-compose up --build
+```
+
 ## Role Definitions
 
 - **USER**: Can request rewards
