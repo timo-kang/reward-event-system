@@ -20,4 +20,4 @@ RUN npm run build auth
 EXPOSE 3001
 
 # Command to run the application
-CMD [ "npm", "run", "start:prod", "auth" ]
+CMD [ "npm", "run", "start" ]

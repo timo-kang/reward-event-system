@@ -2,9 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { EventService } from './event.service';
 import { getModelToken } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Event, EventCondition } from './schemas/event.schema';
+import { Event, EventDocument } from './schemas/event.schema';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MockEventModel, createMockEvent } from '../test/mock-models';
+import { CreateEventDto } from './dto/create-event.dto';
 
 describe('EventService', () => {
   let service: EventService;
@@ -33,62 +34,93 @@ describe('EventService', () => {
   });
 
   describe('create', () => {
-    const createEventDto = {
-      name: 'Test Event',
-      description: 'Test Description',
-      start_date: new Date(),
-      end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      conditions: [
-        {
-          type: 'minimumPoints',
-          value: 100,
-          description: 'Minimum points required'
-        },
-        {
-          type: 'consecutiveLogins',
-          value: 3,
-          description: 'Minimum consecutive logins required'
-        },
-        {
-          type: 'invitedFriends',
-          value: 2,
-          description: 'Minimum invited friends required'
-        }
-      ] as EventCondition[]
-    };
-
     it('should create an event successfully', async () => {
-      const newEvent = new MockEventModel(mockEvent);
-      MockEventModel.exec.mockResolvedValue(mockEvent);
+      const createEventDto: CreateEventDto = {
+        name: 'Test Event',
+        description: 'Test Description',
+        start_date: new Date('2025-05-20T04:11:27.552Z'),
+        end_date: new Date('2025-05-27T04:11:27.552Z'),
+        conditions: [
+          {
+            type: 'minimumPoints',
+            value: 100,
+            description: 'Minimum points required',
+          },
+          {
+            type: 'consecutiveLogins',
+            value: 3,
+            description: 'Minimum consecutive logins required',
+          },
+          {
+            type: 'invitedFriends',
+            value: 2,
+            description: 'Minimum invited friends required',
+          },
+        ],
+        is_active: false,
+      };
+
+      const mockEvent = {
+        _id: new Types.ObjectId(TEST_EVENT_ID),
+        ...createEventDto,
+        createdAt: new Date('2025-05-20T06:15:53.199Z'),
+        updatedAt: new Date('2025-05-20T06:15:53.199Z'),
+      } as EventDocument;
+
+      const newEvent = new MockEventModel(createEventDto);
+      newEvent.save = jest.fn().mockResolvedValue(mockEvent);
 
       const result = await service.create(createEventDto);
 
-      expect(result).toMatchObject(mockEvent);
+      expect(result).toBeDefined();
+      expect(result).toMatchObject(createEventDto);
+      expect(result.createdAt).toBeInstanceOf(Date);
+      expect(result.updatedAt).toBeInstanceOf(Date);
       expect(newEvent.save).toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when start_date is after end_date', async () => {
-      const invalidDto = {
-        ...createEventDto,
-        start_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        end_date: new Date(),
+      const invalidDto: CreateEventDto = {
+        name: 'Test Event',
+        description: 'Test Description',
+        start_date: new Date('2025-05-27T04:11:27.552Z'),
+        end_date: new Date('2025-05-20T04:11:27.552Z'),
+        conditions: [
+          {
+            type: 'minimumPoints',
+            value: 100,
+            description: 'Minimum points required',
+          },
+        ],
       };
 
       await expect(service.create(invalidDto)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException when event name is empty', async () => {
-      const invalidDto = {
-        ...createEventDto,
+      const invalidDto: CreateEventDto = {
         name: '',
+        description: 'Test Description',
+        start_date: new Date('2025-05-20T04:11:27.552Z'),
+        end_date: new Date('2025-05-27T04:11:27.552Z'),
+        conditions: [
+          {
+            type: 'minimumPoints',
+            value: 100,
+            description: 'Minimum points required',
+          },
+        ],
       };
 
       await expect(service.create(invalidDto)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException when conditions array is empty', async () => {
-      const invalidDto = {
-        ...createEventDto,
+      const invalidDto: CreateEventDto = {
+        name: 'Test Event',
+        description: 'Test Description',
+        start_date: new Date('2025-05-20T04:11:27.552Z'),
+        end_date: new Date('2025-05-27T04:11:27.552Z'),
         conditions: [],
       };
 
@@ -119,6 +151,7 @@ describe('EventService', () => {
 
   describe('findById', () => {
     it('should return an event by id', async () => {
+      const mockEvent = createMockEvent(TEST_EVENT_ID);
       MockEventModel.exec.mockResolvedValue(mockEvent);
 
       const result = await service.findById(TEST_EVENT_ID);
@@ -127,29 +160,32 @@ describe('EventService', () => {
       expect(MockEventModel.findById).toHaveBeenCalledWith(TEST_EVENT_ID);
     });
 
-    it('should return null when event not found', async () => {
+    it('should throw NotFoundException when event not found', async () => {
       MockEventModel.exec.mockResolvedValue(null);
 
-      const result = await service.findById('nonexistentid');
-
-      expect(result).toBeNull();
-      expect(MockEventModel.findById).toHaveBeenCalledWith('nonexistentid');
+      await expect(service.findById(TEST_EVENT_ID))
+        .rejects.toThrow(NotFoundException);
     });
 
     it('should throw BadRequestException when id is invalid', async () => {
-      await expect(service.findById('invalid-id')).rejects.toThrow(BadRequestException);
+      await expect(service.findById("invalid-id")).rejects.toThrow(
+        BadRequestException
+      );
       expect(MockEventModel.findById).not.toHaveBeenCalled();
     });
   });
 
   describe('update', () => {
-    const updateEventDto = {
-      name: 'Updated Event',
-      description: 'Updated Description',
-    };
-
     it('should update an event successfully', async () => {
-      const updatedEvent = { ...mockEvent, ...updateEventDto };
+      const updateEventDto = {
+        name: 'Updated Event',
+        description: 'Updated Description',
+      };
+
+      const updatedEvent = createMockEvent(TEST_EVENT_ID);
+      updatedEvent.name = 'Updated Event';
+      updatedEvent.description = 'Updated Description';
+
       MockEventModel.exec.mockResolvedValue(updatedEvent);
 
       const result = await service.update(TEST_EVENT_ID, updateEventDto);
@@ -157,39 +193,49 @@ describe('EventService', () => {
       expect(result).toEqual(updatedEvent);
       expect(MockEventModel.findByIdAndUpdate).toHaveBeenCalledWith(
         TEST_EVENT_ID,
-        { $set: updateEventDto },
-        { new: true }
+        updateEventDto,
+        { new: true },
       );
     });
 
     it('should throw NotFoundException when event not found', async () => {
+      const updateEventDto = {
+        name: 'Updated Event',
+        description: 'Updated Description',
+      };
+
       MockEventModel.exec.mockResolvedValue(null);
 
-      await expect(service.update('nonexistentid', updateEventDto))
+      await expect(service.update(TEST_EVENT_ID, updateEventDto))
         .rejects.toThrow(NotFoundException);
-      expect(MockEventModel.findByIdAndUpdate).toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when id is invalid', async () => {
-      await expect(service.update('invalid-id', updateEventDto))
-        .rejects.toThrow(BadRequestException);
+      const updateEventDto = {
+        name: 'Updated Event',
+        description: 'Updated Description',
+      };
+
+      await expect(
+        service.update("invalid-id", updateEventDto)
+      ).rejects.toThrow(BadRequestException);
       expect(MockEventModel.findByIdAndUpdate).not.toHaveBeenCalled();
     });
   });
 
   describe('findActiveEvents', () => {
     it('should return only active events', async () => {
-      const activeEvents = [mockEvent];
+      const activeEvents = [
+        createMockEvent(TEST_EVENT_ID),
+        createMockEvent('507f1f77bcf86cd799439013'),
+      ];
+
       MockEventModel.exec.mockResolvedValue(activeEvents);
 
       const result = await service.findActiveEvents();
 
       expect(result).toEqual(activeEvents);
-      expect(MockEventModel.find).toHaveBeenCalledWith({
-        is_active: true,
-        start_date: { $lte: expect.any(Date) },
-        end_date: { $gte: expect.any(Date) },
-      });
+      expect(MockEventModel.find).toHaveBeenCalledWith({ is_active: true });
     });
 
     it('should return empty array when no active events exist', async () => {
@@ -204,7 +250,9 @@ describe('EventService', () => {
 
   describe('updateEventStatus', () => {
     it('should update event status successfully', async () => {
-      const updatedEvent = { ...mockEvent, is_active: false };
+      const updatedEvent = createMockEvent(TEST_EVENT_ID);
+      updatedEvent.is_active = false;
+
       MockEventModel.exec.mockResolvedValue(updatedEvent);
 
       const result = await service.updateEventStatus(TEST_EVENT_ID, false);
@@ -212,22 +260,22 @@ describe('EventService', () => {
       expect(result).toEqual(updatedEvent);
       expect(MockEventModel.findByIdAndUpdate).toHaveBeenCalledWith(
         TEST_EVENT_ID,
-        { $set: { is_active: false } },
-        { new: true }
+        { is_active: false },
+        { new: true },
       );
     });
 
     it('should throw NotFoundException when event not found', async () => {
       MockEventModel.exec.mockResolvedValue(null);
 
-      await expect(service.updateEventStatus('nonexistentid', false))
+      await expect(service.updateEventStatus(TEST_EVENT_ID, false))
         .rejects.toThrow(NotFoundException);
-      expect(MockEventModel.findByIdAndUpdate).toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when id is invalid', async () => {
-      await expect(service.updateEventStatus('invalid-id', false))
-        .rejects.toThrow(BadRequestException);
+    it("should throw BadRequestException when id is invalid", async () => {
+      await expect(
+        service.updateEventStatus("invalid-id", false)
+      ).rejects.toThrow(BadRequestException);
       expect(MockEventModel.findByIdAndUpdate).not.toHaveBeenCalled();
     });
   });

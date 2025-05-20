@@ -27,11 +27,8 @@ export class Reward extends Document {
   @Prop({ required: true, default: true })
   is_active!: boolean;
 
-  @Prop({ required: true, default: Date.now })
-  created_at!: Date;
-
-  @Prop({ required: true, default: Date.now })
-  updated_at!: Date;
+  createdAt!: Date;
+  updatedAt!: Date;
 }
 
 export type RewardDocument = Reward & Document;

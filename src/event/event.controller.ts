@@ -24,15 +24,12 @@ export class EventController {
     async createEvent(@Body() createEventDto: CreateEventDto) {
         try {
             return await this.eventService.create(createEventDto);
-        } catch (error: any) {
-            if (error.code === 11000) {
-                throw new HttpException(
-                    { message: 'Event with this name already exists' },
-                    HttpStatus.BAD_REQUEST,
-                );
+        } catch (error) {
+            if (error instanceof HttpException) {
+                throw error;
             }
             throw new HttpException(
-                { message: AUTH_ERRORS.UNAUTHORIZED },
+                'Failed to create event',
                 HttpStatus.INTERNAL_SERVER_ERROR,
             );
         }
@@ -232,7 +229,6 @@ export class RewardRequestController {
 
     @Put(':requestId/status')
     updateRewardRequestStatus(@Param('requestId') requestId: string, @Body('status') status: string) {
-        return 'not implemented'
-        // return this.rewardRequestService.updateRewardRequestStatus(requestId, status);
+        return this.rewardRequestService.updateStatus(requestId, status as RewardRequestStatus);
     }
 }

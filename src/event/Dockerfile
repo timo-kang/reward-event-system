@@ -20,4 +20,4 @@ RUN npm run build event
 EXPOSE 3002
 
 # Command to run the application
-CMD [ "npm", "run", "start:prod", "event" ]
+CMD [ "npm", "run", "start" ]

@@ -20,4 +20,4 @@ RUN npm run build gateway
 EXPOSE 3000
 
 # Command to run the application
-CMD [ "npm", "run", "start:prod", "gateway" ]
+CMD [ "npm", "run", "start" ]

@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { RewardRequest, RewardRequestDocument } from './schemas/reward-request.schema';
 import { Event, EventDocument } from './schemas/event.schema';
 import { CreateRewardRequestDto } from './dto/create-reward-request.dto';
@@ -9,9 +9,9 @@ import { RewardService } from './reward.service';
 import { UserActivityService } from '../auth/user-activity.service';
 
 export enum RewardRequestStatus {
-  PENDING = 'pending',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
 }
 
 @Injectable()
@@ -27,7 +27,6 @@ export class RewardRequestService {
     async create(eventId: string, createRewardRequestDto: CreateRewardRequestDto): Promise<RewardRequestDocument> {
         const { userId, rewardId } = createRewardRequestDto;
 
-        // 1. Find the associated event
         const event = await this.eventModel.findById(eventId).exec();
         if (!event) {
             throw new NotFoundException('Event not found');
@@ -37,13 +36,11 @@ export class RewardRequestService {
             throw new ForbiddenException('Event is not active');
         }
 
-        // 2. Fetch reward details to ensure it exists
         const reward = await this.rewardService.findById(rewardId);
         if (!reward) {
             throw new NotFoundException('Reward not found');
         }
 
-        // 3. Check for duplicate requests
         const existingRequest = await this.rewardRequestModel.findOne({
             user: userId,
             event: eventId,
@@ -54,7 +51,6 @@ export class RewardRequestService {
             throw new ConflictException('Reward request for this event already exists for the user');
         }
 
-        // 4. Create the reward request
         const createdRewardRequest = new this.rewardRequestModel({
             user: userId,
             event: eventId,
@@ -67,13 +63,15 @@ export class RewardRequestService {
     }
 
     async findByUser(userId: string): Promise<RewardRequestDocument[]> {
+        if (!Types.ObjectId.isValid(userId)) {
+            throw new BadRequestException('Invalid user ID');
+        }
         return this.rewardRequestModel.find({ user: userId }).exec();
     }
 
     async findByEvent(eventId: string): Promise<RewardRequestDocument[]> {
-        const event = await this.eventModel.findById(eventId).exec();
-        if (!event) {
-            throw new NotFoundException('Event not found');
+        if (!Types.ObjectId.isValid(eventId)) {
+            throw new BadRequestException('Invalid event ID');
         }
         return this.rewardRequestModel.find({ event: eventId }).exec();
     }
@@ -87,13 +85,12 @@ export class RewardRequestService {
     }
 
     async updateStatus(id: string, status: RewardRequestStatus): Promise<RewardRequestDocument> {
-        if (!Object.values(RewardRequestStatus).includes(status)) {
-            throw new BadRequestException('Invalid status');
+        if (!Types.ObjectId.isValid(id)) {
+            throw new BadRequestException('Invalid request ID');
         }
 
-        const rewardRequest = await this.rewardRequestModel.findById(id).exec();
-        if (!rewardRequest) {
-            throw new NotFoundException('Reward request not found');
+        if (!Object.values(RewardRequestStatus).includes(status)) {
+            throw new BadRequestException('Invalid status');
         }
 
         const updatedRequest = await this.rewardRequestModel
@@ -101,13 +98,16 @@ export class RewardRequestService {
             .exec();
 
         if (!updatedRequest) {
-            throw new Error('Failed to update reward request');
+            throw new NotFoundException('Reward request not found');
         }
 
         return updatedRequest;
     }
 
     async remove(id: string): Promise<void> {
+        if (!Types.ObjectId.isValid(id)) {
+            throw new BadRequestException('Invalid request ID');
+        }
         const result = await this.rewardRequestModel.deleteOne({ _id: id }).exec();
         if (result.deletedCount === 0) {
             throw new NotFoundException('Reward request not found');
@@ -116,8 +116,12 @@ export class RewardRequestService {
 
     private async validateConditions(eventId: string, userId: string): Promise<boolean> {
         const event = await this.eventModel.findById(eventId).exec();
-        if (!event || !event.conditions) {
-            return true; // No conditions means everyone is eligible
+        if (!event) {
+            throw new NotFoundException('Event not found');
+        }
+
+        if (!event.conditions) {
+            return true;
         }
 
         const conditions = event.conditions as any[];
@@ -151,7 +155,3 @@ export class RewardRequestService {
         return true;
     }
 }
-
-// TODO: Uncomment and import if you are injecting these models
-// import { Event } from './schemas/event.schema';
-// import { Reward } from './schemas/reward.schema';

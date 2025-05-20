@@ -56,7 +56,7 @@ export class RewardService {
   }
 
   async remove(id: string): Promise<void> {
-    const result = await this.rewardModel.deleteOne({ _id: id }).exec();
+    const result = await this.rewardModel.deleteOne({ _id: id });
     if (result.deletedCount === 0) {
       throw new NotFoundException('Reward not found');
     }

@@ -15,7 +15,7 @@ export class Event extends Document {
   @Prop({ required: true })
   description!: string;
 
-  @Prop({ required: true, default: true })
+  @Prop({ required: true })
   is_active!: boolean;
 
   @Prop({ required: true })
@@ -30,11 +30,8 @@ export class Event extends Document {
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Reward' }] })
   rewards!: Types.ObjectId[];
 
-  @Prop({ required: true, default: Date.now })
-  created_at!: Date;
-
-  @Prop({ required: true, default: Date.now })
-  updated_at!: Date;
+  createdAt!: Date;
+  updatedAt!: Date;
 }
 
 export type EventDocument = Event & Document;

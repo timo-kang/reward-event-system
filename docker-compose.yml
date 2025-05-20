@@ -16,7 +16,7 @@ services:
       context: ./src/gateway
       dockerfile: Dockerfile
     ports:
-      - "3000:3000" # Or your desired gateway port
+      - "3000:3000"
     depends_on:
       - auth-server
       - event-server
@@ -32,14 +32,14 @@ services:
       context: ./src/auth
       dockerfile: Dockerfile
     ports:
-      - "3001:3001" # Or your desired auth port
+      - "3001:3001"
     depends_on:
       - mongodb
     networks:
       - app-network
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/your_database_name # Replace with your desired database name
-      - JWT_SECRET=YOUR_JWT_SECRET # Replace with a strong secret
+      - MONGO_URI=mongodb://mongodb:27017/reward-event-system
+      - JWT_SECRET=jwtsecret
     restart: always
 
   event-server:
@@ -47,13 +47,13 @@ services:
       context: ./src/event
       dockerfile: Dockerfile
     ports:
-      - "3002:3002" # Or your desired event port
+      - "3002:3002"
     depends_on:
       - mongodb
     networks:
       - app-network
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/your_database_name # Replace with your desired database name
+      - MONGO_URI=mongodb://mongodb:27017/reward-event-system
     restart: always
 
 volumes:

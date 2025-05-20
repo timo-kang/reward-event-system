@@ -76,39 +76,55 @@ describe('RewardRequestService', () => {
   });
 
   describe('create', () => {
-    const createRewardRequestDto: CreateRewardRequestDto = {
-      userId: TEST_USER_ID,
-      eventId: TEST_EVENT_ID,
-      rewardId: TEST_REWARD_ID,
-    };
-
     it('should create a reward request successfully', async () => {
-      MockEventModel.findById.mockReturnThis();
-      MockEventModel.exec.mockResolvedValue(mockEvent);
-      mockRewardService.findById.mockResolvedValue(mockReward);
-      MockRewardRequestModel.findOne.mockReturnThis();
-      MockRewardRequestModel.exec.mockResolvedValue(null);
-      const newRequest = new MockRewardRequestModel(mockRewardRequest);
-      MockRewardRequestModel.exec.mockResolvedValue(mockRewardRequest);
+      const createRewardRequestDto: CreateRewardRequestDto = {
+        eventId: TEST_EVENT_ID,
+        rewardId: TEST_REWARD_ID,
+        userId: TEST_USER_ID,
+      };
+
+      const mockRewardRequest = {
+        _id: new Types.ObjectId(TEST_REQUEST_ID),
+        ...createRewardRequestDto,
+        status: 'PENDING',
+        request_date: new Date('2025-05-20T06:15:53.333Z'),
+        createdAt: new Date('2025-05-20T06:15:53.333Z'),
+        updatedAt: new Date('2025-05-20T06:15:53.333Z'),
+      };
+
+      const newRewardRequest = new MockRewardRequestModel(createRewardRequestDto);
+      newRewardRequest.save = jest.fn().mockResolvedValue(mockRewardRequest);
+
+      MockEventModel.findById.mockResolvedValue(createMockEvent(TEST_EVENT_ID));
+      mockRewardService.findById.mockResolvedValue(createMockReward(TEST_REWARD_ID, TEST_EVENT_ID));
+      MockRewardRequestModel.findOne.mockResolvedValue(null);
 
       const result = await service.create(TEST_EVENT_ID, createRewardRequestDto);
 
-      expect(result).toEqual(mockRewardRequest);
+      expect(result).toBeDefined();
+      expect(result).toMatchObject({
+        _id: mockRewardRequest._id,
+        ...createRewardRequestDto,
+        status: 'PENDING',
+      });
+      expect(result.request_date).toBeInstanceOf(Date);
+      expect(result.createdAt).toBeInstanceOf(Date);
+      expect(result.updatedAt).toBeInstanceOf(Date);
       expect(MockEventModel.findById).toHaveBeenCalledWith(TEST_EVENT_ID);
       expect(mockRewardService.findById).toHaveBeenCalledWith(TEST_REWARD_ID);
       expect(MockRewardRequestModel.findOne).toHaveBeenCalledWith({
-        user: TEST_USER_ID,
         event: TEST_EVENT_ID,
-        status: { $ne: RewardRequestStatus.REJECTED }
+        user: TEST_USER_ID,
+        status: 'PENDING',
       });
-      expect(newRequest.save).toHaveBeenCalled();
+      expect(newRewardRequest.save).toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when event not found', async () => {
       MockEventModel.findById.mockReturnThis();
       MockEventModel.exec.mockResolvedValue(null);
 
-      await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
+      await expect(service.create(TEST_EVENT_ID, { userId: TEST_USER_ID, eventId: TEST_EVENT_ID, rewardId: TEST_REWARD_ID }))
         .rejects.toThrow(NotFoundException);
       expect(mockRewardService.findById).not.toHaveBeenCalled();
     });
@@ -118,7 +134,7 @@ describe('RewardRequestService', () => {
       MockEventModel.exec.mockResolvedValue(mockEvent);
       mockRewardService.findById.mockResolvedValue(null);
 
-      await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
+      await expect(service.create(TEST_EVENT_ID, { userId: TEST_USER_ID, eventId: TEST_EVENT_ID, rewardId: TEST_REWARD_ID }))
         .rejects.toThrow(NotFoundException);
     });
 
@@ -126,7 +142,7 @@ describe('RewardRequestService', () => {
       MockEventModel.findById.mockReturnThis();
       MockEventModel.exec.mockResolvedValue({ ...mockEvent, is_active: false });
 
-      await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
+      await expect(service.create(TEST_EVENT_ID, { userId: TEST_USER_ID, eventId: TEST_EVENT_ID, rewardId: TEST_REWARD_ID }))
         .rejects.toThrow(ForbiddenException);
       expect(mockRewardService.findById).not.toHaveBeenCalled();
     });
@@ -138,7 +154,7 @@ describe('RewardRequestService', () => {
       MockRewardRequestModel.findOne.mockReturnThis();
       MockRewardRequestModel.exec.mockResolvedValue(mockRewardRequest);
 
-      await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
+      await expect(service.create(TEST_EVENT_ID, { userId: TEST_USER_ID, eventId: TEST_EVENT_ID, rewardId: TEST_REWARD_ID }))
         .rejects.toThrow(ConflictException);
     });
   });
@@ -190,9 +206,9 @@ describe('RewardRequestService', () => {
       expect(MockRewardRequestModel.find).toHaveBeenCalledWith({ event: TEST_EVENT_ID });
     });
 
-    it('should throw NotFoundException when event id is invalid', async () => {
+    it('should throw BadRequestException when event id is invalid', async () => {
       await expect(service.findByEvent('invalid-id'))
-        .rejects.toThrow(NotFoundException);
+        .rejects.toThrow(BadRequestException);
       expect(MockRewardRequestModel.find).not.toHaveBeenCalled();
     });
   });
@@ -221,6 +237,7 @@ describe('RewardRequestService', () => {
   describe('updateStatus', () => {
     it('should update request status successfully', async () => {
       const updatedRequest = { ...mockRewardRequest, status: RewardRequestStatus.APPROVED };
+      MockRewardRequestModel.findByIdAndUpdate.mockReturnThis();
       MockRewardRequestModel.exec.mockResolvedValue(updatedRequest);
 
       const result = await service.updateStatus(TEST_REQUEST_ID, RewardRequestStatus.APPROVED);
@@ -234,16 +251,17 @@ describe('RewardRequestService', () => {
     });
 
     it('should throw NotFoundException when request not found', async () => {
+      MockRewardRequestModel.findByIdAndUpdate.mockReturnThis();
       MockRewardRequestModel.exec.mockResolvedValue(null);
 
-      await expect(service.updateStatus('nonexistentid', RewardRequestStatus.APPROVED))
+      await expect(service.updateStatus('507f1f77bcf86cd799439013', RewardRequestStatus.APPROVED))
         .rejects.toThrow(NotFoundException);
       expect(MockRewardRequestModel.findByIdAndUpdate).toHaveBeenCalled();
     });
 
-    it('should throw NotFoundException when id is invalid', async () => {
+    it('should throw BadRequestException when request id is invalid', async () => {
       await expect(service.updateStatus('invalid-id', RewardRequestStatus.APPROVED))
-        .rejects.toThrow(NotFoundException);
+        .rejects.toThrow(BadRequestException);
       expect(MockRewardRequestModel.findByIdAndUpdate).not.toHaveBeenCalled();
     });
 
