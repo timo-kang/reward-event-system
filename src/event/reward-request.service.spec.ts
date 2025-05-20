@@ -83,6 +83,7 @@ describe('RewardRequestService', () => {
     };
 
     it('should create a reward request successfully', async () => {
+      MockEventModel.findById.mockReturnThis();
       MockEventModel.exec.mockResolvedValue(mockEvent);
       mockRewardService.findById.mockResolvedValue(mockReward);
       MockRewardRequestModel.findOne.mockReturnThis();
@@ -104,6 +105,7 @@ describe('RewardRequestService', () => {
     });
 
     it('should throw NotFoundException when event not found', async () => {
+      MockEventModel.findById.mockReturnThis();
       MockEventModel.exec.mockResolvedValue(null);
 
       await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
@@ -112,6 +114,7 @@ describe('RewardRequestService', () => {
     });
 
     it('should throw NotFoundException when reward not found', async () => {
+      MockEventModel.findById.mockReturnThis();
       MockEventModel.exec.mockResolvedValue(mockEvent);
       mockRewardService.findById.mockResolvedValue(null);
 
@@ -120,6 +123,7 @@ describe('RewardRequestService', () => {
     });
 
     it('should throw ForbiddenException when event is not active', async () => {
+      MockEventModel.findById.mockReturnThis();
       MockEventModel.exec.mockResolvedValue({ ...mockEvent, is_active: false });
 
       await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
@@ -128,6 +132,7 @@ describe('RewardRequestService', () => {
     });
 
     it('should throw ConflictException when request already exists', async () => {
+      MockEventModel.findById.mockReturnThis();
       MockEventModel.exec.mockResolvedValue(mockEvent);
       mockRewardService.findById.mockResolvedValue(mockReward);
       MockRewardRequestModel.findOne.mockReturnThis();
@@ -185,9 +190,9 @@ describe('RewardRequestService', () => {
       expect(MockRewardRequestModel.find).toHaveBeenCalledWith({ event: TEST_EVENT_ID });
     });
 
-    it('should throw BadRequestException when event id is invalid', async () => {
+    it('should throw NotFoundException when event id is invalid', async () => {
       await expect(service.findByEvent('invalid-id'))
-        .rejects.toThrow(BadRequestException);
+        .rejects.toThrow(NotFoundException);
       expect(MockRewardRequestModel.find).not.toHaveBeenCalled();
     });
   });
@@ -236,9 +241,9 @@ describe('RewardRequestService', () => {
       expect(MockRewardRequestModel.findByIdAndUpdate).toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when id is invalid', async () => {
+    it('should throw NotFoundException when id is invalid', async () => {
       await expect(service.updateStatus('invalid-id', RewardRequestStatus.APPROVED))
-        .rejects.toThrow(BadRequestException);
+        .rejects.toThrow(NotFoundException);
       expect(MockRewardRequestModel.findByIdAndUpdate).not.toHaveBeenCalled();
     });
 
@@ -251,6 +256,8 @@ describe('RewardRequestService', () => {
 
   describe('validateConditions', () => {
     it('should return true when all conditions are met', async () => {
+      MockEventModel.findById.mockReturnThis();
+      MockEventModel.exec.mockResolvedValue(mockEvent);
       mockUserActivityService.getUserPoints.mockResolvedValue(150);
       mockUserActivityService.getUserConsecutiveLogins.mockResolvedValue(5);
       mockUserActivityService.getUserInvitedFriendsCount.mockResolvedValue(3);
@@ -264,6 +271,8 @@ describe('RewardRequestService', () => {
     });
 
     it('should return false when conditions are not met', async () => {
+      MockEventModel.findById.mockReturnThis();
+      MockEventModel.exec.mockResolvedValue(mockEvent);
       mockUserActivityService.getUserPoints.mockResolvedValue(50);
       mockUserActivityService.getUserConsecutiveLogins.mockResolvedValue(2);
       mockUserActivityService.getUserInvitedFriendsCount.mockResolvedValue(1);
@@ -275,11 +284,21 @@ describe('RewardRequestService', () => {
     });
 
     it('should return true when no conditions exist', async () => {
+      MockEventModel.findById.mockReturnThis();
       MockEventModel.exec.mockResolvedValue({ ...mockEvent, conditions: [] });
 
       const result = await service['validateConditions'](TEST_EVENT_ID, TEST_USER_ID);
 
       expect(result).toBe(true);
+      expect(mockUserActivityService.getUserPoints).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when event not found', async () => {
+      MockEventModel.findById.mockReturnThis();
+      MockEventModel.exec.mockResolvedValue(null);
+
+      await expect(service['validateConditions'](TEST_EVENT_ID, TEST_USER_ID))
+        .rejects.toThrow(NotFoundException);
       expect(mockUserActivityService.getUserPoints).not.toHaveBeenCalled();
     });
   });

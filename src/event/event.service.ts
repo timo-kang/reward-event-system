@@ -31,8 +31,12 @@ export class EventService {
     return this.eventModel.find({ is_active: true }).exec();
   }
 
-  async findById(id: string): Promise<EventDocument | null> {
-    return this.eventModel.findById(id).exec();
+  async findById(id: string): Promise<EventDocument> {
+    const event = await this.eventModel.findById(id).exec();
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+    return event;
   }
 
   async updateEventStatus(id: string, isActive: boolean): Promise<EventDocument> {

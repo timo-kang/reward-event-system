@@ -55,7 +55,7 @@ export class RewardRequestService {
         }
 
         // 4. Create the reward request
-        const createdRewardRequest = await this.rewardRequestModel.create({
+        const createdRewardRequest = new this.rewardRequestModel({
             user: userId,
             event: eventId,
             reward: rewardId,
@@ -71,6 +71,10 @@ export class RewardRequestService {
     }
 
     async findByEvent(eventId: string): Promise<RewardRequestDocument[]> {
+        const event = await this.eventModel.findById(eventId).exec();
+        if (!event) {
+            throw new NotFoundException('Event not found');
+        }
         return this.rewardRequestModel.find({ event: eventId }).exec();
     }
 
@@ -87,12 +91,17 @@ export class RewardRequestService {
             throw new BadRequestException('Invalid status');
         }
 
+        const rewardRequest = await this.rewardRequestModel.findById(id).exec();
+        if (!rewardRequest) {
+            throw new NotFoundException('Reward request not found');
+        }
+
         const updatedRequest = await this.rewardRequestModel
             .findByIdAndUpdate(id, { status }, { new: true })
             .exec();
 
         if (!updatedRequest) {
-            throw new NotFoundException('Reward request not found');
+            throw new Error('Failed to update reward request');
         }
 
         return updatedRequest;
