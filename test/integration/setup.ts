@@ -14,6 +14,7 @@ import { Reward, RewardSchema } from '../../src/event/schemas/reward.schema';
 import { RewardRequest, RewardRequestSchema } from '../../src/event/schemas/reward-request.schema';
 import { UserActivityService } from '../../src/auth/user-activity.service';
 import { JWT_SECRET } from '../../src/shared/auth/auth.constants';
+import { SharedAuthModule } from '../../src/shared/auth/shared-auth.module';
 
 let mongod: MongoMemoryServer;
 let gatewayApp: INestApplication;
@@ -30,13 +31,22 @@ class MockUserActivityService {
 }
 
 export async function setupTestEnvironment() {
+  // Set test environment variables
+  process.env.JWT_SECRET = 'test-secret-key';
+  process.env.AUTH_SERVICE_URL = 'http://localhost:3001';
+  process.env.EVENT_SERVICE_URL = 'http://localhost:3002';
+  process.env.GATEWAY_PORT = '3000';
+  process.env.AUTH_PORT = '3001';
+  process.env.EVENT_PORT = '3002';
+  process.env.MONGODB_URI = 'mongodb://localhost:27017/reward-event-test';
+
   mongod = await MongoMemoryServer.create();
   const mongoUri = mongod.getUri();
 
   const mongooseModule = MongooseModule.forRoot(mongoUri);
 
   const jwtConfig = {
-    JWT_SECRET: JWT_SECRET, // Use the same secret from auth constants
+    JWT_SECRET: 'test-secret-key', // Use a fixed test secret
     JWT_EXPIRATION: '1h',
   };
 
@@ -74,7 +84,7 @@ export async function setupTestEnvironment() {
         { name: Reward.name, schema: RewardSchema },
         { name: RewardRequest.name, schema: RewardRequestSchema },
       ]),
-      AuthModule,
+      SharedAuthModule,
       EventModule,
     ],
     providers: [
