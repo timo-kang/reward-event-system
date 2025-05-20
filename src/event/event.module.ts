@@ -1,14 +1,21 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { EventController } from './event.controller';
+import { EventService } from './event.service';
+import { RewardService } from './reward.service';
+import { RewardRequestService } from './reward-request.service';
 import { Event, EventSchema } from './schemas/event.schema';
 import { Reward, RewardSchema } from './schemas/reward.schema';
 import { RewardRequest, RewardRequestSchema } from './schemas/reward-request.schema';
-import { EventService } from './event.service';
+import { SharedAuthModule } from '../shared/auth/shared-auth.module';
 
 @Module({
   imports: [
-    MongooseModule.forRoot(process.env.MONGO_URI),
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+    SharedAuthModule,
     MongooseModule.forFeature([
       { name: Event.name, schema: EventSchema },
       { name: Reward.name, schema: RewardSchema },
@@ -16,6 +23,7 @@ import { EventService } from './event.service';
     ]),
   ],
   controllers: [EventController],
-  providers: [EventService]
+  providers: [EventService, RewardService, RewardRequestService],
+  exports: [EventService, RewardService, RewardRequestService],
 })
 export class EventModule {}

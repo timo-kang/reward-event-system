@@ -1,10 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtStrategy } from './jwt.strategy';
 import { getModelToken } from '@nestjs/mongoose';
+import { JwtPayload } from '../auth.types';
+import { UserRole } from '../auth.types';
 
 describe('JwtStrategy', () => {
   let jwtStrategy: JwtStrategy;
-  let userModel; // Mocked Mongoose User model
+  let userModel: { findById: any; }; // Mocked Mongoose User model
 
   beforeEach(async () => {
     // Mock the Mongoose User model
@@ -34,7 +36,12 @@ describe('JwtStrategy', () => {
   describe('validate', () => {
     it('should return the user if the payload is valid', async () => {
       const user = { userId: '123', username: 'testuser', roles: ['USER'] };
-      const payload = { sub: '123', username: 'testuser' }; // Example JWT payload
+      const payload = {
+        id: "123",
+        sub: "123",
+        username: "testuser",
+        role: UserRole.USER,
+      }; 
 
       // Configure the mock to return the user
       jest.spyOn(userModel, 'findById').mockResolvedValue(user);
@@ -45,7 +52,12 @@ describe('JwtStrategy', () => {
     });
 
     it('should throw an UnauthorizedException if the user is not found based on the payload', async () => {
-      const payload = { sub: '123', username: 'testuser' }; // Example JWT payload
+      const payload = {
+        id: "123",
+        sub: "123",
+        username: "testuser",
+        role: UserRole.USER,
+      }; 
 
       // Configure the mock to return null or undefined, indicating user not found
       jest.spyOn(userModel, 'findById').mockResolvedValue(null);

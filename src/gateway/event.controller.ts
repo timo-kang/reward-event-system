@@ -1,57 +1,87 @@
-import { Body, Controller, Get, Post, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { JwtAuthGuard } from '@nestjs/passport'; // Import from @nestjs/passport
+import { Observable, catchError, map } from 'rxjs';
+import { AxiosError } from 'axios';
 import { ConfigService } from '@nestjs/config';
-import { RolesGuard } from '../gateway/guards/roles.guard'; // Import from gateway guards
-import { Roles } from '../auth/decorators/roles.decorator'; // Assuming you have this decorator
-import { lastValueFrom } from 'rxjs';
+import { JwtAuthGuard, RolesGuard, Roles, Public } from '../shared/auth';
+import { UserRole } from '../shared/auth';
+import { CreateEventDto } from '../event/dto/create-event.dto';
+import { AUTH_ERRORS } from '../shared/auth';
 
-@Controller('event')
+@Controller('events')
 export class EventController {
-  constructor(private readonly httpService: HttpService) {}
- constructor(
- private readonly httpService: HttpService,
- private readonly configService: ConfigService,
- ) {}
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OPERATOR', 'ADMIN')
-  async createEvent(@Body() createEventDto: any, @Req() req: any) {
-    // Forward the request to the downstream Event server
-    const eventServiceUrl = this.configService.get<string>('EVENT_SERVICE_URL') + '/event';
-    try {
-      const response = await lastValueFrom(
-        this.httpService.post(eventServiceUrl, createEventDto, {
-          headers: {
-            Authorization: req.headers.authorization, // Forward the JWT
-          },
+  @Roles(UserRole.ADMIN)
+  createEvent(@Body() createEventDto: CreateEventDto): Observable<any> {
+    const eventServiceUrl = this.configService.get<string>('EVENT_SERVICE_URL');
+    return this.httpService
+      .post(`${eventServiceUrl}/events`, createEventDto)
+      .pipe(
+        map(response => response.data),
+        catchError((error: AxiosError) => {
+          if (error.response?.data) {
+            throw new HttpException(
+              error.response.data as Record<string, any>,
+              error.response.status,
+            );
+          }
+          throw new HttpException(
+            { message: AUTH_ERRORS.UNAUTHORIZED },
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          );
         }),
       );
-      return response.data;
-    } catch (error) {
-      // Handle errors from the downstream service
-      throw error;
-    }
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
-  async getAllEvents(@Req() req: any) {
-    // Forward the request to the downstream Event server
-    const eventServiceUrl = this.configService.get<string>('EVENT_SERVICE_URL') + '/event';
-    try {
-      const response = await lastValueFrom(
-        this.httpService.get(eventServiceUrl, {
-          headers: {
-            Authorization: req.headers.authorization, // Forward the JWT
-          },
+  @Public()
+  getAllEvents(): Observable<any> {
+    const eventServiceUrl = this.configService.get<string>('EVENT_SERVICE_URL');
+    return this.httpService
+      .get(`${eventServiceUrl}/events`)
+      .pipe(
+        map(response => response.data),
+        catchError((error: AxiosError) => {
+          if (error.response?.data) {
+            throw new HttpException(
+              error.response.data as Record<string, any>,
+              error.response.status,
+            );
+          }
+          throw new HttpException(
+            { message: AUTH_ERRORS.UNAUTHORIZED },
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          );
         }),
       );
-      return response.data;
-    } catch (error) {
-      // Handle errors from the downstream service
-      throw error;
-    }
+  }
+
+  @Get(':id')
+  @Public()
+  getEventById(@Param('id') id: string): Observable<any> {
+    const eventServiceUrl = this.configService.get<string>('EVENT_SERVICE_URL');
+    return this.httpService
+      .get(`${eventServiceUrl}/events/${id}`)
+      .pipe(
+        map(response => response.data),
+        catchError((error: AxiosError) => {
+          if (error.response?.data) {
+            throw new HttpException(
+              error.response.data as Record<string, any>,
+              error.response.status,
+            );
+          }
+          throw new HttpException(
+            { message: AUTH_ERRORS.UNAUTHORIZED },
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          );
+        }),
+      );
   }
 }

@@ -2,41 +2,71 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { getModelToken } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
+import { NotFoundException, ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { UserActivityService } from './user-activity.service';
+import { Types } from 'mongoose';
+import { AUTH_ERRORS, UserRole } from "../shared/auth";
 
 jest.mock('bcrypt', () => ({ compare: jest.fn(), hash: jest.fn() }));
+
+const TEST_USER_ID = "507f1f77bcf86cd799439011";
+const TEST_USERNAME = "testuser";
+const TEST_PASSWORD = "password123";
+
 describe('AuthService', () => {
   let service: AuthService;
-  let userModel: any;
-  let jwtService: any;
+  let mockUserModel: any;
+  let mockJwtService: any;
+  let mockUserActivityService: any;
 
-  const mockUserModel = {
-    create: jest.fn(),
-    findOne: jest.fn(),
-  };
-
-  const mockJwtService = {
-    sign: jest.fn(),
-    verify: jest.fn(),
+  const mockUser = {
+    _id: new Types.ObjectId(TEST_USER_ID),
+    username: TEST_USERNAME,
+    password: "hashedpassword",
+    role: UserRole.USER,
+    points: 0,
+    consecutive_logins: 0,
+    last_login_date: new Date(),
+    invited_friends_count: 0,
+    invited_friends: [] as Types.ObjectId[],
+    created_at: new Date(),
+    updated_at: new Date(),
+    save: jest.fn().mockResolvedValue(true),
   };
 
   beforeEach(async () => {
+    mockUserModel = {
+      findOne: jest.fn(),
+      create: jest.fn().mockReturnValue(new Types.ObjectId(TEST_USER_ID)),
+    };
+
+    mockJwtService = {
+      sign: jest.fn().mockReturnValue("test-token"),
+    };
+
+    mockUserActivityService = {
+      updateConsecutiveLogins: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         {
-          provide: getModelToken('User'), // 'User' is the name of the model
+          provide: getModelToken("User"),
           useValue: mockUserModel,
         },
         {
           provide: JwtService,
           useValue: mockJwtService,
         },
+        {
+          provide: UserActivityService,
+          useValue: mockUserActivityService,
+        },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
-    userModel = module.get(getModelToken('User'));
-    jwtService = module.get(JwtService);
   });
 
   it('should be defined', () => {
@@ -44,71 +74,137 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
+    const createUserDto = {
+      username: TEST_USERNAME,
+      password: TEST_PASSWORD,
+    };
+
     it('should successfully register a user', async () => {
-      const createUserDto = { username: 'testuser', password: 'password123' };
-      const hashedPassword = 'hashedpassword';
-      const createdUser = { username: 'testuser', roles: ['USER'] };
-      
-      jest.spyOn(userModel, 'findOne').mockResolvedValue(null);
-      jest.spyOn(require('bcrypt'), 'hash').mockResolvedValue(hashedPassword);
-      jest.spyOn(userModel, 'create').mockResolvedValue(createdUser);
+      mockUserModel.findOne.mockResolvedValue(null);
+      mockUserModel.create.mockResolvedValue(mockUser);
+      require('bcrypt').hash.mockResolvedValue('hashedpassword');
 
       const result = await service.register(createUserDto);
 
-      expect(userModel.findOne).toHaveBeenCalledWith({ username: createUserDto.username });
-      expect(require('bcrypt').hash).toHaveBeenCalledWith(createUserDto.password, 10); // Assuming saltRounds is 10
-      expect(userModel.create).toHaveBeenCalledWith({ ...createUserDto, password: hashedPassword, roles: ['USER'] });
-      expect(result).toEqual(createdUser);
+      expect(result).toEqual({
+        user: {
+          id: TEST_USER_ID,
+          username: TEST_USERNAME,
+          role: UserRole.USER,
+        },
+        access_token: "test-token",
+      });
+
+      expect(mockUserModel.findOne).toHaveBeenCalledWith({ username: createUserDto.username });
+      expect(mockUserModel.create).toHaveBeenCalledWith({
+        ...createUserDto,
+        password: 'hashedpassword',
+        role: UserRole.USER,
+        points: 0,
+        consecutive_logins: 0,
+        last_login_date: null,
+        invited_friends_count: 0,
+        invited_friends: [],
+      });
     });
 
-    it('should throw a ConflictException if username already exists', async () => {
-      const createUserDto = { username: 'existinguser', password: 'password123' };
-      const existingUser = { username: 'existinguser', roles: ['USER'] };
+    it('should throw an error if username already exists', async () => {
+      mockUserModel.findOne.mockResolvedValue(mockUser);
 
-      jest.spyOn(userModel, 'findOne').mockResolvedValue(existingUser);
+      await expect(service.register(createUserDto)).rejects.toThrow(Error(AUTH_ERRORS.USERNAME_EXISTS));
+      expect(mockUserModel.findOne).toHaveBeenCalledWith({ username: createUserDto.username });
+      expect(mockUserModel.create).not.toHaveBeenCalled();
+    });
 
-      await expect(service.register(createUserDto)).rejects.toThrow('Username already exists');
-      expect(userModel.findOne).toHaveBeenCalledWith({ username: createUserDto.username });
-      expect(userModel.create).not.toHaveBeenCalled();
+    it('should throw BadRequestException for short username', async () => {
+      const shortUsernameDto = { username: "te", password: TEST_PASSWORD };
+      
+      await expect(service.register(shortUsernameDto)).rejects.toThrow(BadRequestException);
+      expect(mockUserModel.findOne).not.toHaveBeenCalled();
+      expect(mockUserModel.create).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException for short password', async () => {
+      const shortPasswordDto = { username: TEST_USERNAME, password: "pass" };
+      
+      await expect(service.register(shortPasswordDto)).rejects.toThrow(BadRequestException);
+      expect(mockUserModel.findOne).not.toHaveBeenCalled();
+      expect(mockUserModel.create).not.toHaveBeenCalled();
     });
   });
 
   describe('login', () => {
-    it('should successfully log in a user with correct credentials', async () => {
-      const loginUserDto = { username: 'testuser', password: 'password123' };
-      const hashedPassword = 'hashedpassword';
-      const user = { username: 'testuser', password: hashedPassword, roles: ['USER'] };
-      const token = 'mocked.jwt.token';
+    const loginUserDto = {
+      username: TEST_USERNAME,
+      password: TEST_PASSWORD,
+    };
 
-      jest.spyOn(userModel, 'findOne').mockResolvedValue(user);
-      jest.spyOn(require('bcrypt'), 'compare').mockResolvedValue(true);
-      jest.spyOn(jwtService, 'sign').mockReturnValue(token);
+    it('should successfully log in a user with correct credentials', async () => {
+      mockUserModel.findOne.mockResolvedValue(mockUser);
+      jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true);
 
       const result = await service.login(loginUserDto);
 
-      expect(userModel.findOne).toHaveBeenCalledWith({ username: loginUserDto.username });
-      expect(require('bcrypt').compare).toHaveBeenCalledWith(loginUserDto.password, hashedPassword);
-      expect(jwtService.sign).toHaveBeenCalledWith({ username: user.username, roles: user.roles });
-      expect(result).toEqual({ access_token: token });
-    });
+      expect(result).toEqual({
+        user: {
+          id: TEST_USER_ID,
+          username: TEST_USERNAME,
+          role: UserRole.USER,
+        },
+        access_token: "test-token",
+      });
 
-    it('should throw an UnauthorizedException for incorrect password', async () => {
-      const loginUserDto = { username: 'testuser', password: 'wrongpassword' };
-      const hashedPassword = 'hashedpassword';
-      const user = { username: 'testuser', password: hashedPassword, roles: ['USER'] };
-
-      jest.spyOn(userModel, 'findOne').mockResolvedValue(user);
-      jest.spyOn(require('bcrypt'), 'compare').mockResolvedValue(false);
-
-      await expect(service.login(loginUserDto)).rejects.toThrow('Invalid credentials');
-      expect(userModel.findOne).toHaveBeenCalledWith({ username: loginUserDto.username });
-      expect(require('bcrypt').compare).toHaveBeenCalledWith(loginUserDto.password, hashedPassword);
-      expect(jwtService.sign).not.toHaveBeenCalled();
+      expect(mockUserModel.findOne).toHaveBeenCalledWith({ username: loginUserDto.username });
+      expect(mockJwtService.sign).toHaveBeenCalledWith(
+        {
+          username: mockUser.username,
+          sub: TEST_USER_ID,
+          role: mockUser.role,
+        },
+        { expiresIn: "1h" }
+      );
     });
 
     it('should throw an UnauthorizedException for non-existent user', async () => {
-      jest.spyOn(userModel, 'findOne').mockResolvedValue(null);
-      await expect(service.login({ username: 'nonexistent', password: 'password' })).rejects.toThrow('Invalid credentials');
+      mockUserModel.findOne.mockResolvedValue(null);
+
+      await expect(service.login(loginUserDto)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should update consecutive logins on successful login', async () => {
+      mockUserModel.findOne.mockResolvedValue(mockUser);
+      jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true);
+
+      await service.login(loginUserDto);
+
+      expect(mockUserActivityService.updateConsecutiveLogins).toHaveBeenCalledWith(TEST_USER_ID);
+    });
+    it('should throw an UnauthorizedException for incorrect password', async () => {
+      mockUserModel.findOne.mockResolvedValue(mockUser);
+      jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(false);
+
+      await expect(service.login(loginUserDto)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw a BadRequestException for short username', async () => {
+      const shortUsernameDto = { username: "te", password: TEST_PASSWORD };
+
+      await expect(service.login(shortUsernameDto)).rejects.toThrow(BadRequestException);
+    });
+    it('should include expiration in JWT token', async () => {
+      mockUserModel.findOne.mockResolvedValue(mockUser);
+      jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true);
+
+      await service.login(loginUserDto);
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(
+        {
+          username: mockUser.username,
+          sub: TEST_USER_ID,
+          role: mockUser.role,
+        },
+        { expiresIn: "1h" }
+      );
     });
   });
 });

@@ -1,492 +1,286 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { RewardRequestService } from './reward-request.service';
+import { RewardRequestService, RewardRequestStatus } from './reward-request.service';
 import { getModelToken } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Model, Types } from 'mongoose';
+import { RewardRequest } from './schemas/reward-request.schema';
+import { Event } from './schemas/event.schema';
+import { Reward } from './schemas/reward.schema';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { MockRewardRequestModel, MockEventModel, MockRewardModel, createMockRewardRequest, createMockEvent, createMockReward } from '../test/mock-models';
+import { CreateRewardRequestDto } from './dto/create-reward-request.dto';
+import { UserActivityService } from '../auth/user-activity.service';
 import { RewardService } from './reward.service';
-import { AuthService } from '../auth/auth.service'; // Assuming AuthService is used as the user service
 
 describe('RewardRequestService', () => {
   let service: RewardRequestService;
-  let rewardRequestModel: Model<any>;
-  let eventModel: Model<any>;
-  let rewardModel: Model<any>;
+  let rewardRequestModel: Model<RewardRequest>;
+  let eventModel: Model<Event>;
+  let rewardModel: Model<Reward>;
+  let userActivityService: UserActivityService;
+  let rewardService: RewardService;
 
+  const TEST_USER_ID = '507f1f77bcf86cd799439014';
+  const TEST_EVENT_ID = '507f1f77bcf86cd799439011';
+  const TEST_REWARD_ID = '507f1f77bcf86cd799439012';
+  const TEST_REQUEST_ID = '507f1f77bcf86cd799439013';
+
+  const mockRewardRequest = createMockRewardRequest(TEST_REQUEST_ID, TEST_USER_ID, TEST_EVENT_ID, TEST_REWARD_ID);
+  const mockEvent = createMockEvent(TEST_EVENT_ID);
+  const mockReward = createMockReward(TEST_REWARD_ID, TEST_EVENT_ID);
+
+  const mockUserActivityService = {
+    getUserPoints: jest.fn(),
+    getUserConsecutiveLogins: jest.fn(),
+    getUserInvitedFriendsCount: jest.fn(),
+  };
+
+  const mockRewardService = {
+    findById: jest.fn(),
+  };
 
   beforeEach(async () => {
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RewardRequestService,
         {
-          // Mock RewardRequestModel
           provide: getModelToken('RewardRequest'),
-          useValue: {
-            new: jest.fn(), // Will mock new().save() separately
-            constructor: jest.fn(),
-            find: jest.fn(),
-            findById: jest.fn(),
-            findByIdAndUpdate: jest.fn(),
-            findOne: jest.fn(),
-          },
+          useValue: MockRewardRequestModel,
         },
         {
-          // Mock EventModel (although not directly used in methods tested here, it's a dependency)
-          provide: getModelToken('Event'), // Assuming your Event model is named 'Event'
-          useValue: {
-            findById: jest.fn(),
-          },
+          provide: getModelToken('Event'),
+          useValue: MockEventModel,
         },
         {
-          // Mock AuthService (as the user service)
-          provide: AuthService,
-          useValue: {
-            getUserPoints: jest.fn(),
-            getUserLoginHistory: jest.fn(),
-            getUserInvitedFriendsCount: jest.fn(),
-            // Add other mocked methods from AuthService if needed
-          },
+          provide: getModelToken('Reward'),
+          useValue: MockRewardModel,
         },
         {
-          // Mock RewardService
+          provide: UserActivityService,
+          useValue: mockUserActivityService,
+        },
+        {
           provide: RewardService,
-          useValue: {
- findById: jest.fn(),
-            // Add other mocked methods from RewardService if needed
-          },
+          useValue: mockRewardService,
         },
       ],
     }).compile();
 
     service = module.get<RewardRequestService>(RewardRequestService);
-    rewardRequestModel = module.get<Model<any>>(getModelToken('RewardRequest'));
-    eventModel = module.get<Model<any>>(getModelToken('Event')); // Access the mocked EventModel
-  });
-  
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+    rewardRequestModel = module.get<Model<RewardRequest>>(getModelToken('RewardRequest'));
+    eventModel = module.get<Model<Event>>(getModelToken('Event'));
+    rewardModel = module.get<Model<Reward>>(getModelToken('Reward'));
+    userActivityService = module.get<UserActivityService>(UserActivityService);
+    rewardService = module.get<RewardService>(RewardService);
+
+    jest.clearAllMocks();
   });
 
-  describe('createRewardRequest', () => {
-    const userId = 'user123';
-    const eventId = 'event456';
-    const rewardId = 'reward789';
-
-    const createRewardRequestDto = {
-     userId: userId,
-     eventId: eventId,
-     rewardId: rewardId,
+  describe('create', () => {
+    const createRewardRequestDto: CreateRewardRequestDto = {
+      userId: TEST_USER_ID,
+      eventId: TEST_EVENT_ID,
+      rewardId: TEST_REWARD_ID,
     };
 
-    const mockReward: unknown = { _id: createRewardRequestDto.rewardId, name: 'Test Reward' };
-    
-    it('should create a new reward request if no duplicate exists and conditions are met', async () => {
-      jest.spyOn(rewardRequestModel, 'findOne').mockResolvedValue(null); // No duplicate request
-      jest.spyOn(eventModel, 'findById').mockResolvedValue({}); // Mock a found event
-      jest.spyOn(service['rewardService'], 'findById').mockResolvedValue(mockReward as Reward); // Mock a found reward
-      jest.spyOn(service as any, 'validateConditions').mockResolvedValue(true); // Conditions met
+    it('should create a reward request successfully', async () => {
+      MockEventModel.exec.mockResolvedValue(mockEvent);
+      mockRewardService.findById.mockResolvedValue(mockReward);
+      MockRewardRequestModel.findOne.mockReturnThis();
+      MockRewardRequestModel.exec.mockResolvedValue(null);
+      const newRequest = new MockRewardRequestModel(mockRewardRequest);
+      MockRewardRequestModel.exec.mockResolvedValue(mockRewardRequest);
 
-      // Mock user service calls (even if validateConditions is mocked, they are called within create)
-      jest.spyOn(service['authService'], 'getUserPoints').mockResolvedValue(100);
-      jest.spyOn(service['authService'], 'getUserLoginHistory').mockResolvedValue([new Date()]);
-      jest.spyOn(service['authService'], 'getUserInvitedFriendsCount').mockResolvedValue(5);
+      const result = await service.create(TEST_EVENT_ID, createRewardRequestDto);
 
-      const mockRewardRequestDocument = {
-        user: userId,
-        event: eventId,
-        reward: rewardId,
-        request_date: expect.any(Date),
-        status: 'pending',
-        save: jest.fn().mockResolvedValue({ _id: 'someRequestId', user: userId, event: eventId, reward: rewardId, request_date: expect.any(Date), status: 'pending' }), // Mock save method
-      };
-      jest.spyOn(rewardRequestModel, 'new').mockImplementation(() => mockRewardRequestDocument as any);
-      
-      const result = await service.create(createRewardRequestDto as any); // Cast to any to match the method signature in the code
-
-      expect(rewardRequestModel.findOne).toHaveBeenCalledWith({ user: createRewardRequestDto.userId, event: createRewardRequestDto.eventId });
-      expect(service['rewardService'].findById).toHaveBeenCalledWith(createRewardRequestDto.rewardId);
-      expect(service['validateConditions']).toHaveBeenCalledWith(eventId, userId);
-      expect(rewardRequestModel.new).toHaveBeenCalledWith({ user: userId, event: eventId, reward: rewardId, request_date: expect.any(Date), status: 'pending' });
-      expect(mockRewardRequestDocument.save).toHaveBeenCalled();
-      expect(result).toEqual({ user: userId, event: eventId, reward: rewardId, status: 'pending' });
-
-      // Ensure user service methods were called
-      expect(service['authService'].getUserPoints).toHaveBeenCalledWith(userId);
-      expect(service['authService'].getUserLoginHistory).toHaveBeenCalledWith(userId);
-      expect(service['authService'].getUserInvitedFriendsCount).toHaveBeenCalledWith(userId);
+      expect(result).toEqual(mockRewardRequest);
+      expect(MockEventModel.findById).toHaveBeenCalledWith(TEST_EVENT_ID);
+      expect(mockRewardService.findById).toHaveBeenCalledWith(TEST_REWARD_ID);
+      expect(MockRewardRequestModel.findOne).toHaveBeenCalledWith({
+        user: TEST_USER_ID,
+        event: TEST_EVENT_ID,
+        status: { $ne: RewardRequestStatus.REJECTED }
+      });
+      expect(newRequest.save).toHaveBeenCalled();
     });
 
-    it('should throw ConflictException if a duplicate request exists', async () => {
-      jest.spyOn(rewardRequestModel, 'findOne').mockResolvedValue({}); // Duplicate exists
-      // No need to mock validateConditions or new/save as it should throw before that
-      jest.spyOn(eventModel, 'findById').mockResolvedValue({}); // Mock a found event
+    it('should throw NotFoundException when event not found', async () => {
+      MockEventModel.exec.mockResolvedValue(null);
 
-      await expect(service.create(createRewardRequestDto as any)).rejects.toThrow(ConflictException);
-
-      expect(rewardRequestModel.findOne).toHaveBeenCalledWith({ user: createRewardRequestDto.userId, event: createRewardRequestDto.eventId }); // Check findOne with user and event only
-      expect(service['validateConditions']).not.toHaveBeenCalled();
-      // Ensure user service methods were not called
-      expect(service['authService'].getUserPoints).not.toHaveBeenCalled();
-      expect(service['authService'].getUserLoginHistory).not.toHaveBeenCalled();
-      expect(service['authService'].getUserInvitedFriendsCount).not.toHaveBeenCalled();
-      expect(rewardRequestModel.new).not.toHaveBeenCalled(); // Use not.toHaveBeenCalled() instead of not.toHaveBeenCalledWith()
+      await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
+        .rejects.toThrow(NotFoundException);
+      expect(mockRewardService.findById).not.toHaveBeenCalled();
     });
 
-    it('should throw ForbiddenException if event conditions are not met', async () => {
-      jest.spyOn(rewardRequestModel, 'findOne').mockResolvedValue(null); // No duplicate
-      jest.spyOn(service as any, 'validateConditions').mockResolvedValue(false); // Conditions not met
-      // No need to mock new/save as it should throw before that
-      jest.spyOn(eventModel, 'findById').mockResolvedValue({}); // Mock a found event
-      jest.spyOn(service['rewardService'], 'findById').mockResolvedValue(mockReward); // Mock a found reward
-      // Mock user service calls
-      jest.spyOn(service['authService'], 'getUserPoints').mockResolvedValue(100);
-      jest.spyOn(service['authService'], 'getUserLoginHistory').mockResolvedValue([new Date()]);
-      jest.spyOn(service['authService'], 'getUserInvitedFriendsCount').mockResolvedValue(5);
+    it('should throw NotFoundException when reward not found', async () => {
+      MockEventModel.exec.mockResolvedValue(mockEvent);
+      mockRewardService.findById.mockResolvedValue(null);
 
-
-      await expect(service.create(createRewardRequestDto as any)).rejects.toThrow(ForbiddenException);
-      expect(rewardRequestModel.findOne).toHaveBeenCalledWith({ user: createRewardRequestDto.userId, event: createRewardRequestDto.eventId }); // Ensure duplicate check happens first
-      expect(service['validateConditions']).toHaveBeenCalledWith(eventId, userId);
-      // Ensure user service methods were called
-      expect(rewardRequestModel.new).not.toHaveBeenCalled();
+      await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
+        .rejects.toThrow(NotFoundException);
     });
 
-    it('should throw NotFoundException if the event is not found', async () => {
-      jest.spyOn(rewardRequestModel, 'findOne').mockResolvedValue(null); // No duplicate
-      jest.spyOn(eventModel, 'findById').mockResolvedValue(null); // Event not found
+    it('should throw ForbiddenException when event is not active', async () => {
+      MockEventModel.exec.mockResolvedValue({ ...mockEvent, is_active: false });
 
-      await expect(service.create(createRewardRequestDto as any)).rejects.toThrow(NotFoundException);
-
-      expect(eventModel.findById).toHaveBeenCalledWith(createRewardRequestDto.eventId);
-      expect(rewardRequestModel.findOne).not.toHaveBeenCalled(); // Should not check for duplicate if event not found
-      // Ensure user service methods were not called
-      expect(service['authService'].getUserPoints).not.toHaveBeenCalled();
-      expect(service['authService'].getUserLoginHistory).not.toHaveBeenCalled();
-      expect(service['authService'].getUserInvitedFriendsCount).not.toHaveBeenCalled();
-      expect(service['validateConditions']).not.toHaveBeenCalled();
-      expect(service['rewardService'].findById).not.toHaveBeenCalled(); // Should not check for reward if event not found
+      await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
+        .rejects.toThrow(ForbiddenException);
+      expect(mockRewardService.findById).not.toHaveBeenCalled();
     });
 
-    it('should throw NotFoundException if the reward is not found', async () => {
-      jest.spyOn(rewardRequestModel, 'findOne').mockResolvedValue(null); // No duplicate
-      jest.spyOn(eventModel, 'findById').mockResolvedValue({}); // Event found
-      jest.spyOn(service as any, 'validateConditions').mockResolvedValue(true); // Conditions met
-      jest.spyOn(service['rewardService'], 'findById').mockResolvedValue(null); // Reward not found
-      // Mock user service calls
-      jest.spyOn(service['authService'], 'getUserPoints').mockResolvedValue(100);
-      jest.spyOn(service['authService'], 'getUserLoginHistory').mockResolvedValue([new Date()]);
-      jest.spyOn(service['authService'], 'getUserInvitedFriendsCount').mockResolvedValue(5);
+    it('should throw ConflictException when request already exists', async () => {
+      MockEventModel.exec.mockResolvedValue(mockEvent);
+      mockRewardService.findById.mockResolvedValue(mockReward);
+      MockRewardRequestModel.findOne.mockReturnThis();
+      MockRewardRequestModel.exec.mockResolvedValue(mockRewardRequest);
 
-      await expect(service.create(createRewardRequestDto as any)).rejects.toThrow(NotFoundException);
-      expect(eventModel.findById).toHaveBeenCalledWith(createRewardRequestDto.eventId);
-      expect(rewardRequestModel.findOne).toHaveBeenCalledWith({ user: createRewardRequestDto.userId, event: createRewardRequestDto.eventId });
-      // Ensure user service methods were called
-      expect(service['validateConditions']).toHaveBeenCalledWith(eventId, userId);
-      expect(service['rewardService'].findById).toHaveBeenCalledWith(createRewardRequestDto.rewardId);
-      expect(rewardRequestModel.new).not.toHaveBeenCalled();
+      await expect(service.create(TEST_EVENT_ID, createRewardRequestDto))
+        .rejects.toThrow(ConflictException);
     });
   });
 
-  describe('findRewardRequestsByUser', () => {
-    const userId = 'user123';
-    const mockRequests = [{ user: userId, status: 'pending' }];
+  describe('findByUser', () => {
+    it('should return reward requests for a user', async () => {
+      const requests = [mockRewardRequest];
+      MockRewardRequestModel.exec.mockResolvedValue(requests);
 
-    it('should return reward requests for a given user ID', async () => {
-      const findSpy = { exec: jest.fn().mockResolvedValue(mockRequests) };
-      jest.spyOn(rewardRequestModel, 'find').mockReturnValue(findSpy as any);
+      const result = await service.findByUser(TEST_USER_ID);
 
-      const result = await service.findByUser(userId);
-
-      expect(rewardRequestModel.find).toHaveBeenCalledWith({ user: userId });
-      expect(findSpy.exec).toHaveBeenCalled();
-      expect(result).toEqual(mockRequests);
+      expect(result).toEqual(requests);
+      expect(MockRewardRequestModel.find).toHaveBeenCalledWith({ user: TEST_USER_ID });
     });
 
-    it('should return an empty array if no reward requests are found for the user', async () => {
-      const findSpy = { exec: jest.fn().mockResolvedValue([]) };
-      jest.spyOn(rewardRequestModel, 'find').mockReturnValue(findSpy as any);
-      const result = await service.findByUser(userId);
-      expect(result).toEqual([]);    });  });
+    it('should return empty array when no requests exist', async () => {
+      MockRewardRequestModel.exec.mockResolvedValue([]);
 
+      const result = await service.findByUser(TEST_USER_ID);
 
-  describe('findRewardRequestsByEvent', () => {
-    const eventId = 'event456';
-    const mockRequests = [{ event: eventId, status: 'pending' }];
-
-    it('should return reward requests for a given event ID', async () => {
-      const findSpy = { exec: jest.fn().mockResolvedValue(mockRequests) };
-      jest.spyOn(rewardRequestModel, 'find').mockReturnValue(findSpy as any);
-
-      const result = await service.findRewardRequestsByEvent(eventId);
-
-      expect(rewardRequestModel.find).toHaveBeenCalledWith({ event: eventId }); // Ensure correct query
-      expect(findSpy.exec).toHaveBeenCalled();
-      expect(result).toEqual(mockRequests);
+      expect(result).toEqual([]);
+      expect(MockRewardRequestModel.find).toHaveBeenCalledWith({ user: TEST_USER_ID });
     });
 
-    it('should return an empty array if no reward requests are found for the event', async () => {
-      const findSpy = { exec: jest.fn().mockResolvedValue([]) };
-      jest.spyOn(rewardRequestModel, 'find').mockReturnValue(findSpy as any);
-      const result = await service.findRewardRequestsByEvent(eventId);
-      expect(result).toEqual([]);    });  });
-
-  describe('findRewardRequestsByStatus', () => {
-    const status = 'approved';
-    const mockRequests = [{ status: status }];
-
-    it('should return reward requests with a given status', async () => {
-      const findSpy = { exec: jest.fn().mockResolvedValue(mockRequests) };
-      jest.spyOn(rewardRequestModel, 'find').mockReturnValue(findSpy as any);
-      const result = await service.findByStatus(status);
-      expect(rewardRequestModel.find).toHaveBeenCalledWith({ status: status }); // Ensure correct query
-      expect(findSpy.exec).toHaveBeenCalled();
-      expect(result).toEqual(mockRequests);
+    it('should throw BadRequestException when user id is invalid', async () => {
+      await expect(service.findByUser('invalid-id'))
+        .rejects.toThrow(BadRequestException);
+      expect(MockRewardRequestModel.find).not.toHaveBeenCalled();
     });
   });
 
-  describe('updateRewardRequestStatus', () => {
-    const requestId = 'request999'; // Assuming updateStatus takes a requestId
-    const newStatus = 'approved';
-    const updatedRequest = { _id: requestId, status: newStatus };
+  describe('findByEvent', () => {
+    it('should return reward requests for an event', async () => {
+      const requests = [mockRewardRequest];
+      MockRewardRequestModel.exec.mockResolvedValue(requests);
 
-    it('should update the status of a reward request', async () => {
-      const findByIdAndUpdateSpy = { exec: jest.fn().mockResolvedValue(updatedRequest) };
-      jest.spyOn(rewardRequestModel, 'findByIdAndUpdate').mockReturnValue(findByIdAndUpdateSpy as any);
+      const result = await service.findByEvent(TEST_EVENT_ID);
 
-      const result = await service.updateRewardRequestStatus(requestId, newStatus);
+      expect(result).toEqual(requests);
+      expect(MockRewardRequestModel.find).toHaveBeenCalledWith({ event: TEST_EVENT_ID });
+    });
 
-      expect(rewardRequestModel.findByIdAndUpdate).toHaveBeenCalledWith(requestId, { status: newStatus }, { new: true });
-      expect(findByIdAndUpdateSpy.exec).toHaveBeenCalled();
+    it('should return empty array when no requests exist', async () => {
+      MockRewardRequestModel.exec.mockResolvedValue([]);
+
+      const result = await service.findByEvent(TEST_EVENT_ID);
+
+      expect(result).toEqual([]);
+      expect(MockRewardRequestModel.find).toHaveBeenCalledWith({ event: TEST_EVENT_ID });
+    });
+
+    it('should throw BadRequestException when event id is invalid', async () => {
+      await expect(service.findByEvent('invalid-id'))
+        .rejects.toThrow(BadRequestException);
+      expect(MockRewardRequestModel.find).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findByStatus', () => {
+    it('should return reward requests by status', async () => {
+      const requests = [mockRewardRequest];
+      MockRewardRequestModel.exec.mockResolvedValue(requests);
+
+      const result = await service.findByStatus(RewardRequestStatus.PENDING);
+
+      expect(result).toEqual(requests);
+      expect(MockRewardRequestModel.find).toHaveBeenCalledWith({ status: RewardRequestStatus.PENDING });
+    });
+
+    it('should return empty array when no requests exist', async () => {
+      MockRewardRequestModel.exec.mockResolvedValue([]);
+
+      const result = await service.findByStatus(RewardRequestStatus.PENDING);
+
+      expect(result).toEqual([]);
+      expect(MockRewardRequestModel.find).toHaveBeenCalledWith({ status: RewardRequestStatus.PENDING });
+    });
+  });
+
+  describe('updateStatus', () => {
+    it('should update request status successfully', async () => {
+      const updatedRequest = { ...mockRewardRequest, status: RewardRequestStatus.APPROVED };
+      MockRewardRequestModel.exec.mockResolvedValue(updatedRequest);
+
+      const result = await service.updateStatus(TEST_REQUEST_ID, RewardRequestStatus.APPROVED);
+
       expect(result).toEqual(updatedRequest);
+      expect(MockRewardRequestModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        TEST_REQUEST_ID,
+        { status: RewardRequestStatus.APPROVED },
+        { new: true }
+      );
     });
 
-    it('should return null if the reward request is not found', async () => {
-      const findByIdAndUpdateSpy = { exec: jest.fn().mockResolvedValue(null) };
-      jest.spyOn(rewardRequestModel, 'findByIdAndUpdate').mockReturnValue(findByIdAndUpdateSpy as any);
+    it('should throw NotFoundException when request not found', async () => {
+      MockRewardRequestModel.exec.mockResolvedValue(null);
 
-      const result = await service.updateRewardRequestStatus(requestId, newStatus);
-
-      expect(rewardRequestModel.findByIdAndUpdate).toHaveBeenCalledWith(requestId, { status: newStatus }, { new: true });
-      expect(findByIdAndUpdateSpy.exec).toHaveBeenCalled();
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('validateConditions - Integrated Tests', () => {
-    const eventId = 'event456';
-    const userId = 'user123';
-
-    // Mock the AuthService methods to return specific user data for each test case
-    let getUserPointsSpy: jest.SpyInstance;
-    let getUserLoginHistorySpy: jest.SpyInstance;
-    let getUserInvitedFriendsCountSpy: jest.SpyInstance;
-
-    beforeEach(() => {
-      // Reset mocks for each test in this describe block
-      getUserPointsSpy = jest.spyOn(service['authService'], 'getUserPoints');
-      getUserLoginHistorySpy = jest.spyOn(service['authService'], 'getUserLoginHistory');
-      getUserInvitedFriendsCountSpy = jest.spyOn(service['authService'], 'getUserInvitedFriendsCount');
+      await expect(service.updateStatus('nonexistentid', RewardRequestStatus.APPROVED))
+        .rejects.toThrow(NotFoundException);
+      expect(MockRewardRequestModel.findByIdAndUpdate).toHaveBeenCalled();
     });
 
-    it('should return true if the event has no conditions', async () => {
-      jest.spyOn(eventModel, 'findById').mockResolvedValue({ _id: eventId, conditions: [] }); // Event with no conditions
-
-      const result = await service['validateConditions'](eventId, userId);
-
-      expect(eventModel.findById).toHaveBeenCalledWith(eventId);
-      // Ensure user service methods were not called
-      expect(getUserPointsSpy).not.toHaveBeenCalled();
-      expect(getUserLoginHistorySpy).not.toHaveBeenCalled();
-      expect(getUserInvitedFriendsCountSpy).not.toHaveBeenCalled();
-      expect(result).toBe(true);
+    it('should throw BadRequestException when id is invalid', async () => {
+      await expect(service.updateStatus('invalid-id', RewardRequestStatus.APPROVED))
+        .rejects.toThrow(BadRequestException);
+      expect(MockRewardRequestModel.findByIdAndUpdate).not.toHaveBeenCalled();
     });
 
-    it('should return true if all conditions are met', async () => {
-      const mockEvent = {
-        _id: eventId,
-        conditions: [
-          { type: 'minimumPoints', value: 100 },
-          { type: 'consecutiveLogins', value: 3 },
-          { type: 'invitedFriends', value: 5 },
-        ],
-      };
-      jest.spyOn(eventModel, 'findById').mockResolvedValue(mockEvent);
-
-      // Mock user data to meet all conditions
-      getUserPointsSpy.mockResolvedValue(150);
-      getUserLoginHistorySpy.mockResolvedValue([new Date(), new Date(), new Date(), new Date()]); // 4 logins
-      getUserInvitedFriendsCountSpy.mockResolvedValue(7);
-
-      const result = await service['validateConditions'](eventId, userId);
-
-      expect(eventModel.findById).toHaveBeenCalledWith(eventId);
-      // Ensure user service methods were called
-      expect(getUserPointsSpy).toHaveBeenCalledWith(userId);
-      expect(getUserLoginHistorySpy).toHaveBeenCalledWith(userId);
-      expect(getUserInvitedFriendsCountSpy).toHaveBeenCalledWith(userId);
-      expect(result).toBe(true);
-    });
-
-    it('should return false if minimumPoints condition is not met', async () => {
-      const mockEvent = {
-        _id: eventId,
-        conditions: [
-          { type: 'minimumPoints', value: 100 },
-          { type: 'consecutiveLogins', value: 3 },
-        ],
-      };
-      jest.spyOn(eventModel, 'findById').mockResolvedValue(mockEvent);
-
-      // Mock user data where minimumPoints is NOT met
-      getUserPointsSpy.mockResolvedValue(50);
-      getUserLoginHistorySpy.mockResolvedValue([new Date(), new Date(), new Date(), new Date()]);
-      getUserInvitedFriendsCountSpy.mockResolvedValue(7); // This condition is met, but should still fail due to points
-
-      const result = await service['validateConditions'](eventId, userId);
-
-      expect(eventModel.findById).toHaveBeenCalledWith(eventId);
-      // Ensure user service methods were called
-      expect(getUserPointsSpy).toHaveBeenCalledWith(userId);
-      // Depending on your implementation, login history and invited friends might not be checked if points fail first
-      // Adjust expectations based on how you implement short-circuiting
-      expect(result).toBe(false);
-    });
-
-    it('should return false if consecutiveLogins condition is not met', async () => {
-      const mockEvent = {
-        _id: eventId,
-        conditions: [
-          { type: 'minimumPoints', value: 100 },
-          { type: 'consecutiveLogins', value: 3 },
-        ],
-      };
-      jest.spyOn(eventModel, 'findById').mockResolvedValue(mockEvent);
-
-      // Mock user data where consecutiveLogins is NOT met
-      getUserPointsSpy.mockResolvedValue(150); // Met
-      getUserLoginHistorySpy.mockResolvedValue([new Date(), new Date()]); // Only 2 logins
-
-      const result = await service['validateConditions'](eventId, userId);
-
-      expect(eventModel.findById).toHaveBeenCalledWith(eventId);
-      // Ensure user service methods were called
-      expect(getUserPointsSpy).toHaveBeenCalledWith(userId);
-      expect(getUserLoginHistorySpy).toHaveBeenCalledWith(userId);
-      expect(result).toBe(false);
-    });
-
-    it('should return false if invitedFriends condition is not met', async () => {
-      const mockEvent = {
-        _id: eventId,
-        conditions: [
-          { type: 'minimumPoints', value: 100 },
-          { type: 'invitedFriends', value: 5 },
-        ],
-      };
-      jest.spyOn(eventModel, 'findById').mockResolvedValue(mockEvent);
-
-      // Mock user data where invitedFriends is NOT met
-      getUserPointsSpy.mockResolvedValue(150); // Met
-      getUserInvitedFriendsCountSpy.mockResolvedValue(3); // Only 3 invited friends
-
-      const result = await service['validateConditions'](eventId, userId);
-
-      expect(eventModel.findById).toHaveBeenCalledWith(eventId);
-      // Ensure user service methods were called
-      expect(getUserPointsSpy).toHaveBeenCalledWith(userId);
-      expect(getUserInvitedFriendsCountSpy).toHaveBeenCalledWith(userId);
-      expect(result).toBe(false);
-    });
-
-    it('should return false if multiple conditions exist and some are not met', async () => {
-      const mockEvent = {
-        _id: eventId,
-        conditions: [
-          { type: 'minimumPoints', value: 100 }, // Met
-          { type: 'consecutiveLogins', value: 5 }, // Not met
-          { type: 'invitedFriends', value: 3 }, // Met
-        ],
-      };
-      jest.spyOn(eventModel, 'findById').mockResolvedValue(mockEvent);
-
-      // Mock user data
-      getUserPointsSpy.mockResolvedValue(150);
-      getUserLoginHistorySpy.mockResolvedValue([new Date(), new Date(), new Date()]); // Only 3 logins
-      getUserInvitedFriendsCountSpy.mockResolvedValue(5);
-
-      const result = await service['validateConditions'](eventId, userId);
-
-      expect(eventModel.findById).toHaveBeenCalledWith(eventId);
-      // Ensure user service methods were called
-      expect(getUserPointsSpy).toHaveBeenCalledWith(userId);
-      expect(getUserLoginHistorySpy).toHaveBeenCalledWith(userId);
-      expect(getUserInvitedFriendsCountSpy).toHaveBeenCalledWith(userId);
-      expect(result).toBe(false);
-    });
-
-    it('should return false if the event is not found', async () => {
-      jest.spyOn(eventModel, 'findById').mockResolvedValue(null); // Event not found
-
-      const result = await service['validateConditions'](eventId, userId);
-
-      expect(eventModel.findById).toHaveBeenCalledWith(eventId);
-      // Ensure user service methods were not called
-      expect(getUserPointsSpy).not.toHaveBeenCalled();
-      expect(getUserLoginHistorySpy).not.toHaveBeenCalled();
-      expect(getUserInvitedFriendsCountSpy).not.toHaveBeenCalled();
-      expect(result).toBe(false); // Or consider throwing an error depending on desired behavior
-    });
-
-    it('should handle unknown condition types gracefully (e.g., ignore or log)', async () => {
-      const mockEvent = {
-        _id: eventId,
-        conditions: [
-          { type: 'minimumPoints', value: 100 },
-          { type: 'unknownCondition', value: 'someValue' }, // Unknown type
-        ],
-      };
-      jest.spyOn(eventModel, 'findById').mockResolvedValue(mockEvent);
-      getUserPointsSpy.mockResolvedValue(150); // Meet the known condition
-
-      const result = await service['validateConditions'](eventId, userId);
-
-      expect(eventModel.findById).toHaveBeenCalledWith(eventId);
-      expect(getUserPointsSpy).toHaveBeenCalledWith(userId);
-      // Ensure only the necessary user service methods for known conditions are called
-      expect(getUserLoginHistorySpy).not.toHaveBeenCalled();
-      expect(getUserInvitedFriendsCountSpy).not.toHaveBeenCalled();
-      // Assuming unknown conditions are ignored and validation proceeds with known ones
-      expect(result).toBe(true);
+    it('should throw BadRequestException when status is invalid', async () => {
+      await expect(service.updateStatus(TEST_REQUEST_ID, 'INVALID_STATUS' as RewardRequestStatus))
+        .rejects.toThrow(BadRequestException);
+      expect(MockRewardRequestModel.findByIdAndUpdate).not.toHaveBeenCalled();
     });
   });
 
-  describe('validateConditions - Mocked Behavior Tests (Original)', () => {
-    // These tests remain to ensure the interaction with validateConditions is correct
-    it('should return true if conditions are met (mocked)', async () => {
-      const eventId = 'event456'; // Define variables
-      const userId = 'user123'; // Define variables
-      // Mock the private method directly
-      const validateConditionsSpy = jest.spyOn(service as any, 'validateConditions');
-      validateConditionsSpy.mockResolvedValue(true);
+  describe('validateConditions', () => {
+    it('should return true when all conditions are met', async () => {
+      mockUserActivityService.getUserPoints.mockResolvedValue(150);
+      mockUserActivityService.getUserConsecutiveLogins.mockResolvedValue(5);
+      mockUserActivityService.getUserInvitedFriendsCount.mockResolvedValue(3);
 
-      const result = await service['validateConditions'](eventId, userId); // Accessing private method for testing
+      const result = await service['validateConditions'](TEST_EVENT_ID, TEST_USER_ID);
 
-      expect(validateConditionsSpy).toHaveBeenCalledWith(eventId, userId);
       expect(result).toBe(true);
+      expect(mockUserActivityService.getUserPoints).toHaveBeenCalledWith(TEST_USER_ID);
+      expect(mockUserActivityService.getUserConsecutiveLogins).toHaveBeenCalledWith(TEST_USER_ID);
+      expect(mockUserActivityService.getUserInvitedFriendsCount).toHaveBeenCalledWith(TEST_USER_ID);
     });
 
-    it('should return false if conditions are not met (mocked)', async () => {
-      const eventId = 'event456'; // Define variables
-      const userId = 'user123'; // Define variables
-      // Mock the private method directly
-      const validateConditionsSpy = jest.spyOn(service as any, 'validateConditions');
-      validateConditionsSpy.mockResolvedValue(false);
+    it('should return false when conditions are not met', async () => {
+      mockUserActivityService.getUserPoints.mockResolvedValue(50);
+      mockUserActivityService.getUserConsecutiveLogins.mockResolvedValue(2);
+      mockUserActivityService.getUserInvitedFriendsCount.mockResolvedValue(1);
 
-      const result = await service['validateConditions'](eventId, userId); // Accessing private method for testing
+      const result = await service['validateConditions'](TEST_EVENT_ID, TEST_USER_ID);
 
-      expect(validateConditionsSpy).toHaveBeenCalledWith(eventId, userId);
       expect(result).toBe(false);
+      expect(mockUserActivityService.getUserPoints).toHaveBeenCalledWith(TEST_USER_ID);
     });
 
+    it('should return true when no conditions exist', async () => {
+      MockEventModel.exec.mockResolvedValue({ ...mockEvent, conditions: [] });
+
+      const result = await service['validateConditions'](TEST_EVENT_ID, TEST_USER_ID);
+
+      expect(result).toBe(true);
+      expect(mockUserActivityService.getUserPoints).not.toHaveBeenCalled();
+    });
   });
 });

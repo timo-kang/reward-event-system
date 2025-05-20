@@ -3,21 +3,21 @@ import { IsString, IsNotEmpty, IsDateString } from 'class-validator';
 export class EventDto {
   @IsString()
   @IsNotEmpty()
-  id: string;
+  id!: string;
 
   @IsString()
   @IsNotEmpty()
-  name: string;
+  name!: string;
 
   @IsString()
   @IsNotEmpty()
-  description: string;
+  description!: string;
 
   @IsDateString()
   @IsNotEmpty()
-  date: Date;
+  date!: Date;
 
   @IsString()
   @IsNotEmpty()
-  location: string;
+  location!: string;
 }

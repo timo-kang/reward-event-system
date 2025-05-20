@@ -1,40 +1,65 @@
-import { Controller, Post, Body, Get, UseGuards, Req, Param, Put, UseInterceptors, ClassSerializerInterceptor } from '@nestjs/common';
-import { AuthService } from './auth.service'; // Assuming AuthService methods return Promise<UserDocument> or similar for user objects
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
-import { Roles } from './decorators/roles.decorator';
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Get, Request } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { LoginUserDto } from './dto/login-user.dto';
+import { JwtAuthGuard, Public, Roles, RolesGuard } from '../shared/auth';
+import { UserRole, JwtPayload } from '../shared/auth';
+import { AUTH_ERRORS } from '../shared/auth';
+import { UserDocument } from './schemas/user.schema';
+
+interface RequestWithUser extends Request {
+  user: JwtPayload;
+}
 
 @Controller('auth')
-@UseInterceptors(ClassSerializerInterceptor) // Automatically exclude fields marked with @Exclude() in DTOs/entities
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  async register(@Body() registerDto: RegisterDto): Promise<any> { // Use a more specific return type if possible
-    return this.authService.register(registerDto);
+  @Public()
+  @HttpCode(HttpStatus.CREATED)
+  async register(@Body() createUserDto: CreateUserDto) {
+    try {
+      const result = await this.authService.register(createUserDto);
+      return {
+        message: 'User registered successfully',
+        user: result,
+      };
+    } catch (error: any) {
+      if (error.code === 11000) {
+        throw new Error(AUTH_ERRORS.USERNAME_EXISTS);
+      }
+      throw error;
+    }
   }
 
   @Post('login')
-  async login(@Body() loginDto: LoginDto): Promise<{ access_token: string }> {
-    // AuthService.login now throws exceptions, no need to check for null
-    return this.authService.login(loginDto);
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() loginUserDto: LoginUserDto) {
+    try {
+      const result = await this.authService.login(loginUserDto);
+      return result;
+    } catch (error) {
+      throw new Error(AUTH_ERRORS.INVALID_CREDENTIALS);
+    }
   }
 
+  @Get('validate')
   @UseGuards(JwtAuthGuard)
-  @Get('profile')
-  // Assuming JwtAuthGuard attaches the user object (excluding password) to the request
-  getProfile(@Req() req): any { // Use a more specific type for req.user
-    return req.user;
+  async validateToken(@Request() req: RequestWithUser) {
+    return {
+      user: req.user,
+    };
   }
 
+  @Get('admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  // Assuming AuthService.updateRoles returns the updated user object (excluding password)
-  @Roles('ADMIN')
-  @Put('users/:id/roles')
-  async updateRoles(@Param('id') id: string, @Body('roles') roles: string[]) {
-    return this.authService.updateRoles(id, roles);
+  @Roles(UserRole.ADMIN)
+  async adminRoute() {
+    return {
+      message: 'This is an admin-only route',
+    };
   }
 }
 

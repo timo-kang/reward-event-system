@@ -1,96 +1,121 @@
-import { Injectable, UnauthorizedException, NotFoundException, ConflictException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { UserDocument } from './schemas/user.schema'; // Assuming you have defined UserDocument in your schema file
-import * as bcrypt from 'bcrypt'; 
-import { JwtService } from '@nestjs/jwt';
-import { UserRole } from './enums/user-role.enum';
-import {CreateUserDto} from "./dto/create-user.dto";
-import {LoginUserDto} from "./dto/login-user.dto";
+import * as bcrypt from 'bcrypt';
+import { User, UserDocument } from './schemas/user.schema';
+import { CreateUserDto } from './dto/create-user.dto';
+import { LoginUserDto } from './dto/login-user.dto';
+import { JwtPayload, AuthResponse, UserRole } from '../shared/auth';
+import { AUTH_ERRORS } from '../shared/auth';
+import { UserActivityService } from './user-activity.service';
 
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectModel('User') private userModel: Model<UserDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwtService: JwtService,
+    private userActivityService: UserActivityService,
   ) {}
 
-  async register(createUserDto: CreateUserDto): Promise<UserDocument> {
-    const { username, password } = createUserDto;
-    const existingUser = await this.userModel.findOne({ username }).exec();
-    if (existingUser) {
-      throw new ConflictException('Username already exists');
+  private validateRegisterPolicy( username: string, password: string ) {
+    if( username.length < 6 || password.length < 6) {
+      throw new BadRequestException(AUTH_ERRORS.INVALID_CREDENTIALS)
     }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new this.userModel({ username, password: hashedPassword, roles: [UserRole.USER] }); // Default role
-    return newUser.save();
+    else if (username === password) {
+      throw new Error('too simple password');
+    }
+    // add more registration input policies
+    return;
   }
 
-  async login(loginUserDto: LoginUserDto): Promise<{ access_token: string }> {
-    const { username, password } = loginUserDto;
-    const user = await this.userModel.findOne({ username }).select('+password').exec(); // Select password for comparison
-    if (!user) {
-      throw new NotFoundException('User not found');
+  async register(createUserDto: CreateUserDto): Promise<AuthResponse> {
+    const { username, password } = createUserDto;
+    this.validateRegisterPolicy(username, password);
+    // Check if user already exists
+    const existingUser = await this.userModel.findOne({ username });
+    if (existingUser) {
+      throw new Error(AUTH_ERRORS.USERNAME_EXISTS);
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // If password is valid, generate JWT
-    const payload = { username: user.username, sub: user._id, roles: user.roles };
-    // Remove password from user object before returning
-    user.password = undefined;
+    // Create new user
+    const user = await this.userModel.create({
+      username,
+      password: hashedPassword,
+      role: UserRole.USER,
+      points: 0,
+      consecutive_logins: 0,
+      last_login_date: null,
+      invited_friends_count: 0,
+      invited_friends: [],
+    });
+
+    // Generate JWT token
+    const payload: JwtPayload = {
+      sub: user._id.toString(),
+      username: user.username,
+      role: user.role,
+    };
+
+    const access_token = this.jwtService.sign(payload);
+
     return {
-      access_token: this.jwtService.sign(payload)
+      access_token,
+      user: {
+        id: user._id.toString(),
+        username: user.username,
+        role: user.role,
+      },
     };
   }
 
-  async findById(userId: string): Promise<UserDocument | null> {
-    return this.userModel.findById(userId).select('-password').exec();
-  }
+  async login(loginUserDto: LoginUserDto): Promise<AuthResponse> {
+    const { username, password } = loginUserDto;
 
-  async updateRoles(userId: string, roles: UserRole[]): Promise<UserDocument | null> {
-    // Find the user first to ensure they exist before updating
-    const user = await this.userModel.findById(userId).exec();
+    // Validate input
+    this.validateRegisterPolicy(username, password);
+    // Find user
+    const user = await this.userModel.findOne({ username });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new UnauthorizedException(AUTH_ERRORS.INVALID_CREDENTIALS);
     }
-    user.roles = roles;
-    await user.save();
-    return this.userModel.findById(userId).select('-password').exec(); // Return the updated user without password
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException(AUTH_ERRORS.INVALID_CREDENTIALS);
+    }
+
+    // Update consecutive logins
+    await this.userActivityService.updateConsecutiveLogins(user._id.toString());
+
+    // Generate JWT token
+    const payload: JwtPayload = {
+      sub: user._id.toString(),
+      username: user.username,
+      role: user.role,
+    };
+
+    const access_token = this.jwtService.sign(payload, { expiresIn: "1h" });
+
+    return {
+      access_token,
+      user: {
+        id: user._id.toString(),
+        username: user.username,
+        role: user.role,
+      },
+    };
   }
 
-  async getUserPoints(userId: string): Promise<number> {
-    // Placeholder logic: return a mock number of points
-    console.log(`Fetching points for user: ${userId}`);
-    return 150; 
-  }
-
-  async getUserLoginHistory(userId: string): Promise<Date[]> {
-    // Placeholder logic: return a mock login history (last 5 days)
-    console.log(`Fetching login history for user: ${userId}`);
-    const today = new Date();
-    return Array.from({ length: 5 }, (_, i) => {
-      const date = new Date(today);
-      date.setDate(today.getDate() - i);
-      return date;
-    });
-  }
-
-  async getUserInvitedFriendsCount(userId: string): Promise<number> {
-    // Placeholder logic: return a mock number of invited friends
-    console.log(`Fetching invited friends count for user: ${userId}`);
-    return 3; 
-  }
-
-  async getUserConsecutiveLogins(userId: string): Promise<number> {
-    // TODO: Implement the logic to calculate and return the number of consecutive logins for the user.
-    // This will likely involve querying your user data source (e.g., database)
-    // to get the user's login history and calculating consecutive logins based on timestamps.
-    // For now, you can return a placeholder value like 0 or a mocked value for testing.
-    console.log(`Fetching consecutive logins for user: ${userId}`);
-    return 0; // Placeholder
+  async validateUser(payload: JwtPayload): Promise<UserDocument> {
+    const user = await this.userModel.findById(payload.sub);
+    if (!user) {
+      throw new UnauthorizedException(AUTH_ERRORS.USER_NOT_FOUND);
+    }
+    return user;
   }
 }

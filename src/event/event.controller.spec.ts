@@ -1,8 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { EventController } from '../event.controller';
-import { EventService } from '../event.service';
-import { RewardService } from '../reward.service';
-import { RewardRequestService } from '../reward-request.service';
+import { EventController } from './event.controller';
+import { EventService } from './event.service';
+import { RewardService } from './reward.service';
+import { RewardRequestService, RewardRequestStatus } from './reward-request.service';
+import { Types } from 'mongoose';
+import { EventCondition } from './schemas/event.schema';
+import { RewardType } from './schemas/reward.schema';
 
 describe('EventController', () => {
   let controller: EventController;
@@ -10,31 +13,86 @@ describe('EventController', () => {
   let rewardService: RewardService;
   let rewardRequestService: RewardRequestService;
 
+  const TEST_EVENT_ID = '507f1f77bcf86cd799439011';
+  const TEST_REWARD_ID = '507f1f77bcf86cd799439012';
+  const TEST_USER_ID = '507f1f77bcf86cd799439013';
+
+  const mockEvent = {
+    _id: new Types.ObjectId(TEST_EVENT_ID),
+    name: 'Test Event',
+    description: 'Test Description',
+    start_date: new Date(),
+    end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    is_active: true,
+    conditions: [
+      {
+        type: 'minimumPoints',
+        value: 100,
+        description: 'Minimum points required'
+      }
+    ] as EventCondition[],
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
+
+  const mockReward = {
+    _id: new Types.ObjectId(TEST_REWARD_ID),
+    name: 'Test Reward',
+    description: 'Test Reward Description',
+    type: RewardType.POINTS,
+    value: 100,
+    event: new Types.ObjectId(TEST_EVENT_ID),
+    is_active: true,
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
+
+  const mockRewardRequest = {
+    _id: new Types.ObjectId(),
+    user: new Types.ObjectId(TEST_USER_ID),
+    event: new Types.ObjectId(TEST_EVENT_ID),
+    reward: new Types.ObjectId(TEST_REWARD_ID),
+    status: RewardRequestStatus.PENDING,
+    request_date: new Date(),
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
+
+  const mockEventService = {
+    create: jest.fn(),
+    findAll: jest.fn(),
+    findById: jest.fn(),
+    update: jest.fn(),
+    findActiveEvents: jest.fn(),
+    updateEventStatus: jest.fn(),
+  };
+
+  const mockRewardService = {
+    create: jest.fn(),
+    findByEvent: jest.fn(),
+  };
+
+  const mockRewardRequestService = {
+    create: jest.fn(),
+    findByEvent: jest.fn(),
+    updateStatus: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [EventController],
       providers: [
         {
           provide: EventService,
-          useValue: {
-            createEvent: jest.fn(),
-            findAllEvents: jest.fn(),
-          },
+          useValue: mockEventService,
         },
         {
           provide: RewardService,
-          useValue: {
-            createReward: jest.fn(),
-            findRewardsByEventId: jest.fn(),
-          },
+          useValue: mockRewardService,
         },
         {
           provide: RewardRequestService,
-          useValue: {
-            createRewardRequest: jest.fn(),
-            findRewardRequestsByEvent: jest.fn(),
-            updateRewardRequestStatus: jest.fn(),
-          },
+          useValue: mockRewardRequestService,
         },
       ],
     }).compile();
@@ -45,88 +103,127 @@ describe('EventController', () => {
     rewardRequestService = module.get<RewardRequestService>(RewardRequestService);
   });
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined();
-  });
-
   describe('createEvent', () => {
-    it('should create an event', async () => {
-      const createEventDto = { name: 'Test Event', description: 'Test Description' };
-      const createdEvent = { _id: 'someId', ...createEventDto };
-      jest.spyOn(eventService, 'createEvent').mockResolvedValue(createdEvent as any);
+    const createEventDto = {
+      name: 'Test Event',
+      description: 'Test Description',
+      start_date: new Date(),
+      end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      conditions: [
+        {
+          type: 'minimumPoints',
+          value: 100,
+          description: 'Minimum points required'
+        }
+      ] as EventCondition[],
+    };
 
-      expect(await controller.createEvent(createEventDto)).toBe(createdEvent);
-      expect(eventService.createEvent).toHaveBeenCalledWith(createEventDto);
+    it('should create an event', async () => {
+      mockEventService.create.mockResolvedValue(mockEvent);
+
+      const result = await controller.createEvent(createEventDto);
+
+      expect(result).toEqual(mockEvent);
+      expect(eventService.create).toHaveBeenCalledWith(createEventDto);
     });
   });
 
-  describe('findAllEvents', () => {
-    it('should return an array of events', async () => {
-      const events = [{ _id: 'id1', name: 'Event 1' }, { _id: 'id2', name: 'Event 2' }];
-      jest.spyOn(eventService, 'findAllEvents').mockResolvedValue(events as any);
+  describe('getAllEvents', () => {
+    it('should return all events', async () => {
+      const events = [mockEvent];
+      mockEventService.findAll.mockResolvedValue(events);
 
-      expect(await controller.findAllEvents()).toBe(events);
-      expect(eventService.findAllEvents).toHaveBeenCalled();
+      const result = await controller.getAllEvents();
+
+      expect(result).toEqual(events);
+      expect(eventService.findAll).toHaveBeenCalled();
     });
   });
 
   describe('createReward', () => {
-    it('should create a reward for an event', async () => {
-      const eventId = 'eventId1';
-      const createRewardDto = { name: 'Test Reward', type: 'points', value: 100 };
-      const createdReward = { _id: 'rewardId1', event: eventId, ...createRewardDto };
-      jest.spyOn(rewardService, 'createReward').mockResolvedValue(createdReward as any);
+    const createRewardDto = {
+      name: 'Test Reward',
+      description: 'Test Reward Description',
+      type: RewardType.POINTS,
+      value: 100,
+      event: TEST_EVENT_ID,
+    };
 
-      expect(await controller.createReward(eventId, createRewardDto)).toBe(createdReward);
-      expect(rewardService.createReward).toHaveBeenCalledWith({ ...createRewardDto, event: eventId });
+    it('should create a reward for an event', async () => {
+      mockEventService.findById.mockResolvedValue(mockEvent);
+      mockRewardService.create.mockResolvedValue(mockReward);
+
+      const result = await controller.createReward(TEST_EVENT_ID, createRewardDto);
+
+      expect(result).toEqual(mockReward);
+      expect(eventService.findById).toHaveBeenCalledWith(TEST_EVENT_ID);
+      expect(rewardService.create).toHaveBeenCalledWith(TEST_EVENT_ID, createRewardDto);
     });
   });
 
-  describe('findRewardsByEvent', () => {
-    it('should return an array of rewards for an event', async () => {
-      const eventId = 'eventId1';
-      const rewards = [{ _id: 'rewardId1', event: eventId }, { _id: 'rewardId2', event: eventId }];
-      jest.spyOn(rewardService, 'findRewardsByEventId').mockResolvedValue(rewards as any);
+  describe('getRewardsByEvent', () => {
+    it('should return rewards for an event', async () => {
+      mockEventService.findById.mockResolvedValue(mockEvent);
+      const rewards = [mockReward];
+      mockRewardService.findByEvent.mockResolvedValue(rewards);
 
-      expect(await controller.findRewardsByEvent(eventId)).toBe(rewards);
-      expect(rewardService.findRewardsByEventId).toHaveBeenCalledWith(eventId);
+      const result = await controller.getRewardsByEvent(TEST_EVENT_ID);
+
+      expect(result).toEqual(rewards);
+      expect(eventService.findById).toHaveBeenCalledWith(TEST_EVENT_ID);
+      expect(rewardService.findByEvent).toHaveBeenCalledWith(TEST_EVENT_ID);
     });
   });
 
   describe('createRewardRequest', () => {
-    it('should create a reward request', async () => {
-      const eventId = 'eventId1';
-      const rewardId = 'rewardId1';
-      // Assuming user information is attached to the request by guards
-      const req = { user: { userId: 'userId1' } };
-      const createdRequest = { _id: 'requestId1', user: 'userId1', event: eventId, reward: rewardId, status: 'pending' };
-      jest.spyOn(rewardRequestService, 'createRewardRequest').mockResolvedValue(createdRequest as any);
+    const createRewardRequestDto = {
+      userId: TEST_USER_ID,
+      eventId: TEST_EVENT_ID,
+      rewardId: TEST_REWARD_ID,
+    };
 
-      expect(await controller.createRewardRequest(eventId, rewardId, req)).toBe(createdRequest);
-      expect(rewardRequestService.createRewardRequest).toHaveBeenCalledWith('userId1', eventId, rewardId);
+    it('should create a reward request', async () => {
+      mockEventService.findById.mockResolvedValue(mockEvent);
+      mockRewardRequestService.create.mockResolvedValue(mockRewardRequest);
+
+      const result = await controller.createRewardRequest(TEST_EVENT_ID, createRewardRequestDto);
+
+      expect(result).toEqual(mockRewardRequest);
+      expect(eventService.findById).toHaveBeenCalledWith(TEST_EVENT_ID);
+      expect(rewardRequestService.create).toHaveBeenCalledWith(TEST_EVENT_ID, createRewardRequestDto);
     });
   });
 
   describe('findRewardRequestsByEvent', () => {
-    it('should return an array of reward requests for an event', async () => {
-      const eventId = 'eventId1';
-      const requests = [{ _id: 'requestId1', event: eventId }, { _id: 'requestId2', event: eventId }];
-      jest.spyOn(rewardRequestService, 'findRewardRequestsByEvent').mockResolvedValue(requests as any);
+    it('should return reward requests for an event', async () => {
+      const requests = [mockRewardRequest];
+      mockRewardRequestService.findByEvent.mockResolvedValue(requests);
 
-      expect(await controller.findRewardRequestsByEvent(eventId)).toBe(requests);
-      expect(rewardRequestService.findRewardRequestsByEvent).toHaveBeenCalledWith(eventId);
+      const result = await controller.findRewardRequestsByEvent(TEST_EVENT_ID);
+
+      expect(result).toEqual(requests);
+      expect(rewardRequestService.findByEvent).toHaveBeenCalledWith(TEST_EVENT_ID);
     });
   });
 
   describe('updateRewardRequestStatus', () => {
-    it('should update the status of a reward request', async () => {
-      const requestId = 'requestId1';
-      const updateStatusDto = { status: 'approved' };
-      const updatedRequest = { _id: requestId, status: 'approved' };
-      jest.spyOn(rewardRequestService, 'updateRewardRequestStatus').mockResolvedValue(updatedRequest as any);
+    it('should update reward request status', async () => {
+      mockEventService.findById.mockResolvedValue(mockEvent);
+      const updatedRequest = { ...mockRewardRequest, status: RewardRequestStatus.APPROVED };
+      mockRewardRequestService.updateStatus.mockResolvedValue(updatedRequest);
 
-      expect(await controller.updateRewardRequestStatus(requestId, updateStatusDto)).toBe(updatedRequest);
-      expect(rewardRequestService.updateRewardRequestStatus).toHaveBeenCalledWith(requestId, updateStatusDto.status);
+      const result = await controller.updateRewardRequestStatus(
+        TEST_EVENT_ID,
+        mockRewardRequest._id.toString(),
+        RewardRequestStatus.APPROVED
+      );
+
+      expect(result).toEqual(updatedRequest);
+      expect(eventService.findById).toHaveBeenCalledWith(TEST_EVENT_ID);
+      expect(rewardRequestService.updateStatus).toHaveBeenCalledWith(
+        mockRewardRequest._id.toString(),
+        RewardRequestStatus.APPROVED
+      );
     });
   });
 });
