@@ -104,11 +104,20 @@ describe('System Integration Tests', () => {
         description: 'Test Event Description',
         start_date: new Date(),
         end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-        conditions: {
-          min_age: 18,
-          max_age: 65,
-          required_points: 100,
-        },
+        conditions: [
+          {
+            type: 'minimumPoints',
+            value: 100
+          },
+          {
+            type: 'consecutiveLogins',
+            value: 5
+          },
+          {
+            type: 'invitedFriends',
+            value: 3
+          }
+        ],
         is_active: true, // Set event as active
       };
 
@@ -149,6 +158,7 @@ describe('System Integration Tests', () => {
         event: eventId,
       };
 
+      console.log('Creating reward for event:', eventId);
       const response = await request(app.getHttpServer())
         .post(`/events/${eventId}/rewards`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -157,6 +167,17 @@ describe('System Integration Tests', () => {
 
       expect(response.body).toHaveProperty('_id');
       rewardId = response.body._id;
+      console.log('Created reward ID:', rewardId);
+
+      // Verify reward was created
+      const rewardResponse = await request(app.getHttpServer())
+        .get(`/events/${eventId}/rewards`)
+        .expect(200);
+
+      console.log('Rewards for event:', rewardResponse.body);
+      expect(Array.isArray(rewardResponse.body)).toBe(true);
+      expect(rewardResponse.body.length).toBeGreaterThan(0);
+      expect(rewardResponse.body[0]._id).toBe(rewardId);
     });
 
     it('should get rewards by event (public)', async () => {

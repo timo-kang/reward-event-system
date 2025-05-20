@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, Put, HttpException, HttpStatus, UseGuards, Delete } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Put, HttpException, HttpStatus, UseGuards, Delete, Headers } from '@nestjs/common';
 import { EventService } from './event.service';
 import { RewardService } from './reward.service';
 import { RewardRequestService } from './reward-request.service';

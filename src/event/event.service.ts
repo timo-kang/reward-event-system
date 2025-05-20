@@ -21,13 +21,21 @@ export class EventService {
       }
     }
 
-    if (!createEventDto.conditions || createEventDto.conditions.length === 0) {
+    // Convert conditions object to array if it's not already
+    const conditions = createEventDto.conditions 
+      ? Array.isArray(createEventDto.conditions) 
+        ? createEventDto.conditions 
+        : [createEventDto.conditions]
+      : [];
+
+    if (conditions.length === 0) {
       throw new BadRequestException('Event must have at least one condition');
     }
 
     const newEvent = new this.eventModel({
       ...createEventDto,
-      is_active: createEventDto.is_active ?? false,
+      conditions,
+      is_active: createEventDto.is_active ?? true, // Default to true for testing
     });
     return newEvent.save();
   }

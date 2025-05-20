@@ -12,6 +12,8 @@ import { User, UserSchema } from '../../src/auth/schemas/user.schema';
 import { Event, EventSchema } from '../../src/event/schemas/event.schema';
 import { Reward, RewardSchema } from '../../src/event/schemas/reward.schema';
 import { RewardRequest, RewardRequestSchema } from '../../src/event/schemas/reward-request.schema';
+import { UserActivityService } from '../../src/auth/user-activity.service';
+import { JWT_SECRET } from '../../src/shared/auth/auth.constants';
 
 let mongod: MongoMemoryServer;
 let gatewayApp: INestApplication;
@@ -20,6 +22,13 @@ let eventApp: INestApplication;
 let authModule: TestingModule;
 let eventModule: TestingModule;
 
+// Mock UserActivityService
+class MockUserActivityService {
+  async getUserPoints() { return 1000; }
+  async getUserConsecutiveLogins() { return 50; }
+  async getUserInvitedFriendsCount() { return 13; }
+}
+
 export async function setupTestEnvironment() {
   mongod = await MongoMemoryServer.create();
   const mongoUri = mongod.getUri();
@@ -27,7 +36,7 @@ export async function setupTestEnvironment() {
   const mongooseModule = MongooseModule.forRoot(mongoUri);
 
   const jwtConfig = {
-    JWT_SECRET: 'jwt-secret-test',
+    JWT_SECRET: JWT_SECRET, // Use the same secret from auth constants
     JWT_EXPIRATION: '1h',
   };
 
@@ -68,10 +77,17 @@ export async function setupTestEnvironment() {
       AuthModule,
       EventModule,
     ],
+    providers: [
+      {
+        provide: UserActivityService,
+        useClass: MockUserActivityService,
+      },
+    ],
   }).compile();
   eventApp = eventModule.createNestApplication();
   await eventApp.listen(3002);
 
+  // Create gateway service last
   const gatewayModule = await Test.createTestingModule({
     imports: [
       configModule,

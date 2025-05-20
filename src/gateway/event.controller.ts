@@ -110,13 +110,15 @@ export class EventController {
         map(response => response.data),
         catchError((error: AxiosError) => {
           if (error.response?.data) {
+            const errorData = error.response.data as { message?: string } | string;
+            const errorMessage = typeof errorData === 'string' ? errorData : errorData.message || 'Unknown error';
             throw new HttpException(
-              error.response.data as Record<string, any>,
+              { message: errorMessage },
               error.response.status,
             );
           }
           throw new HttpException(
-            { message: AUTH_ERRORS.UNAUTHORIZED },
+            { message: 'Failed to create reward' },
             HttpStatus.INTERNAL_SERVER_ERROR,
           );
         }),
