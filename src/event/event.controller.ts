@@ -110,12 +110,7 @@ export class EventController {
     async createReward(
         @Param('id') eventId: string,
         @Body() createRewardDto: CreateRewardDto,
-        @Request() req,
     ) {
-        console.log('Event service - Creating reward');
-        console.log('Auth header:', req.headers.authorization);
-        console.log('User from request:', req.user);
-        
         try {
             const event = await this.eventService.findById(eventId);
             if (!event) {
