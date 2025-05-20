@@ -266,18 +266,27 @@ describe('System Integration Tests', () => {
 
       expect(Array.isArray(response.body)).toBe(true);
       expect(response.body.length).toBeGreaterThan(0);
+    });
 
-      const requestId = response.body[0]._id;
+    it('should update reward request status (admin only)', async () => {
+      // First get the request ID
+      const getResponse = await request(app.getHttpServer())
+        .get(`/events/${eventId}/requests`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
 
-      it('should update reward request status (admin only)', async () => {
-        const updateResponse = await request(app.getHttpServer())
-          .put(`/events/${eventId}/requests/${requestId}/status`)
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({ status: 'APPROVED' })
-          .expect(200);
+      expect(Array.isArray(getResponse.body)).toBe(true);
+      expect(getResponse.body.length).toBeGreaterThan(0);
 
-        expect(updateResponse.body.status).toBe('APPROVED');
-      });
+      const requestId = getResponse.body[0]._id;
+
+      const updateResponse = await request(app.getHttpServer())
+        .put(`/events/${eventId}/requests/${requestId}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'APPROVED' })
+        .expect(200);
+
+      expect(updateResponse.body.status).toBe('APPROVED');
     });
   });
 });
